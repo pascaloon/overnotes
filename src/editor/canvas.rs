@@ -1,0 +1,288 @@
+//! The pan/zoom canvas viewport and its interaction state machine.
+
+use dioxus::prelude::*;
+
+use super::objects::ObjectView;
+use super::{DragState, EditorState, Tool, ViewMode};
+
+const MIN_ZOOM: f64 = 0.2;
+const MAX_ZOOM: f64 = 4.0;
+const MIN_W: f64 = 40.0;
+const MIN_H: f64 = 30.0;
+
+/// Rotate a vector by `-angle_deg` (world -> object-local space).
+fn to_local(dx: f64, dy: f64, angle_deg: f64) -> (f64, f64) {
+    let a = angle_deg.to_radians();
+    (dx * a.cos() + dy * a.sin(), -dx * a.sin() + dy * a.cos())
+}
+
+#[component]
+pub fn Canvas() -> Element {
+    let mut state = use_context::<EditorState>();
+
+    let (pan_x, pan_y) = *state.pan.read();
+    let zoom = *state.zoom.read();
+    let tool = *state.tool.read();
+    let interactive = state.is_edit_mode();
+
+    let tool_class = match tool {
+        Tool::Select => "tool-select",
+        Tool::Note => "tool-note",
+        Tool::Draw => "tool-draw",
+    };
+    let panning = matches!(*state.drag.read(), DragState::Pan { .. });
+
+    let object_ids: Vec<u64> = state.doc.read().objects.iter().map(|o| o.id).collect();
+
+    let live = state.live_points.read().clone();
+    let live_stroke = state.stroke_color.read().clone();
+    let live_width = *state.stroke_width.read();
+
+    rsx! {
+        div {
+            class: "viewport {tool_class}",
+            class: if panning { "panning" },
+            tabindex: "0",
+
+            onmounted: move |evt| {
+                let data = evt.data();
+                state.viewport_mount.set(Some(data.clone()));
+                spawn(async move {
+                    let _ = data.set_focus(true).await;
+                });
+            },
+
+            onmousedown: move |evt| {
+                if !interactive {
+                    return;
+                }
+                let coords = evt.client_coordinates();
+                let (sx, sy) = (coords.x, coords.y);
+                state.menu_open.set(false);
+
+                let is_middle = evt.trigger_button() == Some(dioxus::html::input_data::MouseButton::Auxiliary);
+                if is_middle || tool == Tool::Select {
+                    state.drag.set(DragState::Pan {
+                        start_mouse: (sx, sy),
+                        start_pan: *state.pan.peek(),
+                        moved: false,
+                    });
+                    return;
+                }
+                match tool {
+                    Tool::Note => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        state.add_note(wx, wy);
+                    }
+                    Tool::Draw => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        state.live_points.set(vec![[wx, wy]]);
+                        state.drag.set(DragState::DrawStroke);
+                    }
+                    Tool::Select => {}
+                }
+            },
+
+            onmousemove: move |evt| {
+                if !interactive {
+                    return;
+                }
+                let coords = evt.client_coordinates();
+                let (sx, sy) = (coords.x, coords.y);
+                let drag = state.drag.peek().clone();
+                match drag {
+                    DragState::None => {}
+                    DragState::Pan { start_mouse, start_pan, moved } => {
+                        let dx = sx - start_mouse.0;
+                        let dy = sy - start_mouse.1;
+                        state.pan.set((start_pan.0 + dx, start_pan.1 + dy));
+                        if !moved && (dx.abs() > 3.0 || dy.abs() > 3.0) {
+                            state.drag.set(DragState::Pan { start_mouse, start_pan, moved: true });
+                        }
+                    }
+                    DragState::MoveObject { id, start_world, orig_pos } => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        let mut doc = state.doc.write();
+                        if let Some(obj) = doc.object_mut(id) {
+                            obj.x = orig_pos.0 + (wx - start_world.0);
+                            obj.y = orig_pos.1 + (wy - start_world.1);
+                        }
+                    }
+                    DragState::Resize { id, dir, start_world, orig, rotation } => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        let (ldx, ldy) = to_local(wx - start_world.0, wy - start_world.1, rotation);
+                        let (ox, oy, ow, oh) = orig;
+                        let mut x = ox;
+                        let mut y = oy;
+                        let mut w = ow;
+                        let mut h = oh;
+                        if dir.contains('e') {
+                            w = (ow + ldx).max(MIN_W);
+                        }
+                        if dir.contains('w') {
+                            let ldx = ldx.min(ow - MIN_W);
+                            x = ox + ldx;
+                            w = ow - ldx;
+                        }
+                        if dir.contains('s') {
+                            h = (oh + ldy).max(MIN_H);
+                        }
+                        if dir.contains('n') {
+                            let ldy = ldy.min(oh - MIN_H);
+                            y = oy + ldy;
+                            h = oh - ldy;
+                        }
+                        let mut doc = state.doc.write();
+                        if let Some(obj) = doc.object_mut(id) {
+                            obj.x = x;
+                            obj.y = y;
+                            obj.w = w;
+                            obj.h = h;
+                        }
+                    }
+                    DragState::Rotate { id, center_screen, start_angle, orig_rotation } => {
+                        let angle = (sy - center_screen.1).atan2(sx - center_screen.0).to_degrees();
+                        let mut rotation = orig_rotation + (angle - start_angle);
+                        // Snap near the cardinal angles.
+                        let snapped = (rotation / 90.0).round() * 90.0;
+                        if (rotation - snapped).abs() < 4.0 {
+                            rotation = snapped;
+                        }
+                        let mut doc = state.doc.write();
+                        if let Some(obj) = doc.object_mut(id) {
+                            obj.rotation = rotation.rem_euclid(360.0);
+                        }
+                    }
+                    DragState::DrawStroke => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        let mut pts = state.live_points.write();
+                        let push = pts
+                            .last()
+                            .map(|p| {
+                                let dx = p[0] - wx;
+                                let dy = p[1] - wy;
+                                (dx * dx + dy * dy).sqrt() > 0.75
+                            })
+                            .unwrap_or(true);
+                        if push {
+                            pts.push([wx, wy]);
+                        }
+                    }
+                }
+            },
+
+            onmouseup: move |_| {
+                if !interactive {
+                    return;
+                }
+                let drag = state.drag.peek().clone();
+                match drag {
+                    DragState::Pan { moved, .. } => {
+                        if !moved {
+                            state.deselect();
+                        }
+                    }
+                    DragState::DrawStroke => state.finish_stroke(),
+                    _ => {}
+                }
+                state.drag.set(DragState::None);
+            },
+
+            onmouseleave: move |_| {
+                if matches!(*state.drag.peek(), DragState::DrawStroke) {
+                    state.finish_stroke();
+                }
+                state.drag.set(DragState::None);
+            },
+
+            onwheel: move |evt| {
+                if !interactive {
+                    return;
+                }
+                evt.prevent_default();
+                let coords = evt.client_coordinates();
+                let (mx, my) = (coords.x, coords.y);
+                let dy = match evt.delta() {
+                    dioxus::html::geometry::WheelDelta::Pixels(v) => v.y,
+                    dioxus::html::geometry::WheelDelta::Lines(v) => v.y * 100.0,
+                    dioxus::html::geometry::WheelDelta::Pages(v) => v.y * 800.0,
+                };
+                let old_zoom = *state.zoom.peek();
+                let new_zoom = (old_zoom * (-dy * 0.0012).exp()).clamp(MIN_ZOOM, MAX_ZOOM);
+                let (px, py) = *state.pan.peek();
+                let wx = (mx - px) / old_zoom;
+                let wy = (my - py) / old_zoom;
+                state.zoom.set(new_zoom);
+                state.pan.set((mx - wx * new_zoom, my - wy * new_zoom));
+            },
+
+            onkeydown: move |evt| {
+                if !interactive {
+                    return;
+                }
+                let editing = state.editing_note.read().is_some();
+                match evt.key() {
+                    Key::Delete | Key::Backspace if !editing => {
+                        state.delete_selected();
+                    }
+                    Key::Escape => {
+                        if *state.shot_mode.peek() {
+                            state.shot_mode.set(false);
+                        } else if editing {
+                            state.editing_note.set(None);
+                        } else if *state.menu_open.peek() {
+                            state.menu_open.set(false);
+                        } else {
+                            state.deselect();
+                            state.tool.set(Tool::Select);
+                        }
+                    }
+                    Key::Character(c)
+                        if !editing
+                            && evt.modifiers().ctrl()
+                            && c.eq_ignore_ascii_case("v") =>
+                    {
+                        state.paste_image_from_clipboard();
+                    }
+                    _ => {}
+                }
+            },
+
+            div {
+                class: "world",
+                style: "transform: translate({pan_x}px, {pan_y}px) scale({zoom});",
+
+                for id in object_ids {
+                    ObjectView { key: "{id}", id }
+                }
+
+                if !live.is_empty() {
+                    svg {
+                        class: "live-stroke",
+                        polyline {
+                            points: points_attr(&live),
+                            fill: "none",
+                            stroke: "{live_stroke}",
+                            stroke_width: "{live_width}",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn points_attr(points: &[[f64; 2]]) -> String {
+    let mut out = String::with_capacity(points.len() * 12);
+    for p in points {
+        out.push_str(&format!("{:.2},{:.2} ", p[0], p[1]));
+    }
+    out
+}
+
+/// Whether the editor is currently interactive (guards object handlers too).
+pub fn editor_interactive(state: &EditorState) -> bool {
+    state.host == super::EditorHost::Standalone || *state.mode.read() == ViewMode::Edit
+}
