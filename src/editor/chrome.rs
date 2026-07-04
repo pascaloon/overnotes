@@ -201,11 +201,9 @@ pub fn BottomBar() -> Element {
         div { class: "bottombar",
             button {
                 class: "bar-btn",
-                title: "Screenshot a region of the game",
+                title: "Capture the game, then crop it (Ctrl+Shift+S)",
                 onclick: move |_| {
-                    state.menu_open.set(false);
-                    state.deselect();
-                    state.shot_mode.set(true);
+                    state.start_region_screenshot();
                 },
                 svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -239,6 +237,7 @@ pub fn ShotOverlay() -> Element {
     let mut state = use_context::<EditorState>();
     let mut start = use_signal(|| None::<(f64, f64)>);
     let mut cur = use_signal(|| (0.0f64, 0.0f64));
+    let shot = state.pending_shot.read().clone();
 
     let start_val: Option<(f64, f64)> = *start.read();
     let rect = start_val.map(|s| {
@@ -266,31 +265,37 @@ pub fn ShotOverlay() -> Element {
             },
             onmouseup: move |_| {
                 let Some((x, y, w, h)) = rect else {
-                    state.shot_mode.set(false);
+                    state.cancel_region_screenshot();
                     return;
                 };
-                state.shot_mode.set(false);
                 start.set(None);
                 if w < 4.0 || h < 4.0 {
+                    state.cancel_region_screenshot();
                     return;
                 }
-                let Some(game_hwnd) = state.game_hwnd else {
+                let Some(shot) = state.pending_shot.peek().clone() else {
+                    state.cancel_region_screenshot();
                     return;
                 };
-                let scale = dioxus::desktop::window().scale_factor();
+                state.cancel_region_screenshot();
+                let win = dioxus::desktop::window();
+                let size = win.inner_size();
+                let scale = win.scale_factor();
+                let vw = (size.width as f64 / scale).max(1.0);
+                let vh = (size.height as f64 / scale).max(1.0);
                 let (wx, wy) = state.screen_to_world(x + w / 2.0, y + h / 2.0);
                 let mut st = state;
                 // This component unmounts right away (shot_mode = false), so
                 // the task must outlive the scope: spawn_forever, not spawn.
                 dioxus::dioxus_core::spawn_forever(async move {
                     let (px, py, pw, ph) = (
-                        (x * scale).round() as i32,
-                        (y * scale).round() as i32,
-                        (w * scale).round() as i32,
-                        (h * scale).round() as i32,
+                        (x / vw * shot.width as f64).round() as i32,
+                        (y / vh * shot.height as f64).round() as i32,
+                        (w / vw * shot.width as f64).round() as i32,
+                        (h / vh * shot.height as f64).round() as i32,
                     );
                     let result = tokio::task::spawn_blocking(move || {
-                        crate::platform::capture::capture_window_region(game_hwnd, px, py, pw, ph)
+                        crate::platform::capture::crop_png_region(&shot.png, px, py, pw, ph)
                     })
                     .await;
                     match result {
@@ -301,7 +306,15 @@ pub fn ShotOverlay() -> Element {
                 });
             },
 
-            div { class: "shot-hint", "Drag to select a region - Esc to cancel" }
+            if let Some(shot) = shot.as_ref() {
+                img {
+                    class: "shot-image",
+                    src: "{shot.data_url}",
+                    draggable: "false",
+                }
+            }
+
+            div { class: "shot-hint", "Drag to crop the screenshot - Esc to cancel" }
 
             if let Some((x, y, w, h)) = rect {
                 div {

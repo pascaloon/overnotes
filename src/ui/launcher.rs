@@ -123,8 +123,9 @@ pub fn Launcher() -> Element {
                 overlay_ctx.set(Some(std::rc::Rc::downgrade(&ctx)));
                 attached_to.set(Some((game.title.clone(), game_exe, doc_id)));
                 status.set(format!(
-                    "Overlay attached - {} toggles overview/edit",
-                    ui::overlay::TOGGLE_SHORTCUT_LABEL
+                    "Overlay attached - {} toggles overview/edit, {} captures to crop",
+                    ui::overlay::TOGGLE_SHORTCUT_LABEL,
+                    ui::overlay::SCREENSHOT_SHORTCUT_LABEL
                 ));
             }
         });

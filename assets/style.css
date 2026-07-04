@@ -647,8 +647,18 @@ input[type="range"] {
   position: absolute;
   inset: 0;
   cursor: crosshair;
-  background: rgba(2, 4, 8, 0.25);
+  background: #020408;
   z-index: 80;
+}
+
+.shot-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
 }
 
 .shot-rect {

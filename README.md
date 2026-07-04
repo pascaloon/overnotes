@@ -17,6 +17,7 @@ Built with Rust + [Dioxus 0.7](https://dioxuslabs.com/) (WebView2).
     sliders), bottom bar (region screenshot, close).
   - *Overview mode*: click-through, chrome hidden, overview transparency.
   - `Ctrl+Shift+E` (global) toggles between the two.
+  - `Ctrl+Shift+S` (global) captures the game, then lets you crop the screenshot.
 - **Standalone** — the same editor in a regular window, for a second monitor
   or when the overlay isn't wanted.
 

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
 use windows_capture::capture::{Context, GraphicsCaptureApiHandler};
 use windows_capture::frame::Frame;
 use windows_capture::graphics_capture_api::InternalCaptureControl;
@@ -140,6 +140,49 @@ pub fn capture_window_region(
     }
 
     encode_png(&cropped, fw, fh)
+}
+
+/// Capture the full client area of a window and return PNG bytes.
+pub fn capture_window_client(raw_hwnd: isize) -> Result<Vec<u8>, String> {
+    let hwnd = HWND(raw_hwnd as *mut std::ffi::c_void);
+    let client_rect = unsafe {
+        let mut rect = RECT::default();
+        GetClientRect(hwnd, &mut rect).map_err(|e| e.to_string())?;
+        rect
+    };
+    capture_window_region(
+        raw_hwnd,
+        0,
+        0,
+        client_rect.right - client_rect.left,
+        client_rect.bottom - client_rect.top,
+    )
+}
+
+/// Crop a PNG image and return the selected region as PNG bytes.
+pub fn crop_png_region(
+    png_bytes: &[u8],
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+) -> Result<Vec<u8>, String> {
+    if w < 2 || h < 2 {
+        return Err("selection too small".into());
+    }
+
+    let img = image::load_from_memory(png_bytes).map_err(|e| e.to_string())?;
+    let x = x.clamp(0, img.width() as i32 - 1) as u32;
+    let y = y.clamp(0, img.height() as i32 - 1) as u32;
+    let w = w.clamp(1, (img.width() - x) as i32) as u32;
+    let h = h.clamp(1, (img.height() - y) as i32) as u32;
+    let cropped = img.crop_imm(x, y, w, h);
+
+    let mut out = std::io::Cursor::new(Vec::new());
+    cropped
+        .write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(out.into_inner())
 }
 
 /// Encode raw RGBA pixels as PNG bytes.

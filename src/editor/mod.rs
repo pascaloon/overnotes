@@ -63,6 +63,14 @@ pub enum DragState {
     DrawStroke,
 }
 
+#[derive(Clone)]
+pub struct PendingScreenshot {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub data_url: String,
+}
+
 #[derive(Clone, Copy)]
 pub struct EditorState {
     pub host: EditorHost,
@@ -81,6 +89,7 @@ pub struct EditorState {
     pub stroke_width: Signal<f64>,
     pub menu_open: Signal<bool>,
     pub shot_mode: Signal<bool>,
+    pub pending_shot: Signal<Option<PendingScreenshot>>,
     pub toast: Signal<Option<String>>,
     /// Object id -> data URL, for image objects.
     pub image_cache: Signal<HashMap<u64, String>>,
@@ -114,6 +123,7 @@ impl EditorState {
             stroke_width: Signal::new(3.0),
             menu_open: Signal::new(false),
             shot_mode: Signal::new(false),
+            pending_shot: Signal::new(None),
             toast: Signal::new(None),
             image_cache: Signal::new(cache),
             viewport_mount: Signal::new(None),
@@ -157,6 +167,49 @@ impl EditorState {
     pub fn deselect(&mut self) {
         self.selected.set(None);
         self.editing_note.set(None);
+    }
+
+    /// Enter the region screenshot flow.
+    pub fn start_region_screenshot(&mut self) {
+        let Some(game_hwnd) = self.game_hwnd else {
+            self.show_toast("Screenshots are only available in overlay mode");
+            return;
+        };
+
+        self.cancel_region_screenshot();
+        let mut state = *self;
+        spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                let png = crate::platform::capture::capture_window_client(game_hwnd)?;
+                let img = image::load_from_memory(&png).map_err(|e| e.to_string())?;
+                Ok::<_, String>(PendingScreenshot {
+                    width: img.width(),
+                    height: img.height(),
+                    data_url: png_data_url(&png),
+                    png,
+                })
+            })
+            .await;
+
+            match result {
+                Ok(Ok(shot)) => {
+                    if state.host == EditorHost::Overlay {
+                        state.mode.set(ViewMode::Edit);
+                    }
+                    state.menu_open.set(false);
+                    state.deselect();
+                    state.pending_shot.set(Some(shot));
+                    state.shot_mode.set(true);
+                }
+                Ok(Err(e)) => state.show_toast(&format!("Capture failed: {e}")),
+                Err(_) => state.show_toast("Capture failed"),
+            }
+        });
+    }
+
+    pub fn cancel_region_screenshot(&mut self) {
+        self.shot_mode.set(false);
+        self.pending_shot.set(None);
     }
 
     pub fn add_note(&mut self, wx: f64, wy: f64) {
@@ -340,6 +393,14 @@ impl EditorState {
     }
 }
 
+fn png_data_url(png_bytes: &[u8]) -> String {
+    use base64::Engine;
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png_bytes)
+    )
+}
+
 fn read_clipboard_png() -> Result<Vec<u8>, String> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let img = clipboard
@@ -381,11 +442,14 @@ pub fn Editor() -> Element {
     });
 
     let edit = state.is_edit_mode();
+    let shot_active = *state.shot_mode.read();
     let opacity = match state.host {
         EditorHost::Standalone => 1.0,
         EditorHost::Overlay => {
             let d = state.doc.read();
-            if edit {
+            if shot_active {
+                1.0
+            } else if edit {
                 d.edit_opacity
             } else {
                 d.overview_opacity
@@ -398,7 +462,6 @@ pub fn Editor() -> Element {
         EditorHost::Standalone => "standalone",
     };
     let mode_class = if edit { "mode-edit" } else { "mode-overview" };
-    let shot_active = *state.shot_mode.read();
     let toast = state.toast.read().clone();
 
     rsx! {

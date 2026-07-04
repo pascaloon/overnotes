@@ -227,7 +227,7 @@ pub fn Canvas() -> Element {
                     }
                     Key::Escape => {
                         if *state.shot_mode.peek() {
-                            state.shot_mode.set(false);
+                            state.cancel_region_screenshot();
                         } else if editing {
                             state.editing_note.set(None);
                         } else if *state.menu_open.peek() {

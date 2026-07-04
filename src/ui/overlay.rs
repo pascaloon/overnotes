@@ -18,6 +18,8 @@ use crate::store;
 
 pub const TOGGLE_SHORTCUT: &str = "ctrl+shift+KeyE";
 pub const TOGGLE_SHORTCUT_LABEL: &str = "Ctrl+Shift+E";
+pub const SCREENSHOT_SHORTCUT: &str = "ctrl+shift+KeyS";
+pub const SCREENSHOT_SHORTCUT_LABEL: &str = "Ctrl+Shift+S";
 
 #[component]
 pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Element {
@@ -102,9 +104,17 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
             if next == ViewMode::Overview {
                 toggle_state.deselect();
                 toggle_state.menu_open.set(false);
-                toggle_state.shot_mode.set(false);
+                toggle_state.cancel_region_screenshot();
             }
             toggle_state.mode.set(next);
+        }
+    });
+
+    // Global shortcut: start game-region screenshot.
+    let mut screenshot_state = state;
+    let _ = use_global_shortcut(SCREENSHOT_SHORTCUT, move |hk_state| {
+        if hk_state == HotKeyState::Pressed {
+            screenshot_state.start_region_screenshot();
         }
     });
 
