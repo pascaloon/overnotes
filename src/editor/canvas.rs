@@ -108,7 +108,14 @@ pub fn Canvas() -> Element {
                             obj.y = orig_pos.1 + (wy - start_world.1);
                         }
                     }
-                    DragState::Resize { id, dir, start_world, orig, rotation } => {
+                    DragState::Resize {
+                        id,
+                        dir,
+                        start_world,
+                        orig,
+                        rotation,
+                        aspect_ratio,
+                    } => {
                         let (wx, wy) = state.screen_to_world(sx, sy);
                         let (ldx, ldy) = to_local(wx - start_world.0, wy - start_world.1, rotation);
                         let (ox, oy, ow, oh) = orig;
@@ -131,6 +138,32 @@ pub fn Canvas() -> Element {
                             let ldy = ldy.min(oh - MIN_H);
                             y = oy + ldy;
                             h = oh - ldy;
+                        }
+                        if evt.modifiers().shift() {
+                            if let Some(ratio) = aspect_ratio {
+                                let scale = aspect_scale(dir, w, h, ow, oh);
+                                w = (ow * scale).max(MIN_W);
+                                h = (w / ratio).max(MIN_H);
+                                if h > oh * scale {
+                                    w = h * ratio;
+                                }
+
+                                if dir.contains('w') {
+                                    x = ox + ow - w;
+                                } else if !dir.contains('e') {
+                                    x = ox + (ow - w) / 2.0;
+                                } else {
+                                    x = ox;
+                                }
+
+                                if dir.contains('n') {
+                                    y = oy + oh - h;
+                                } else if !dir.contains('s') {
+                                    y = oy + (oh - h) / 2.0;
+                                } else {
+                                    y = oy;
+                                }
+                            }
                         }
                         let mut doc = state.doc.write();
                         if let Some(obj) = doc.object_mut(id) {
@@ -271,6 +304,22 @@ pub fn Canvas() -> Element {
                 }
             }
         }
+    }
+}
+
+fn aspect_scale(dir: &str, w: f64, h: f64, ow: f64, oh: f64) -> f64 {
+    let min_scale = (MIN_W / ow).max(MIN_H / oh);
+    let sx = (w / ow).max(min_scale);
+    let sy = (h / oh).max(min_scale);
+
+    if dir == "e" || dir == "w" {
+        sx
+    } else if dir == "n" || dir == "s" {
+        sy
+    } else if (sx - 1.0).abs() >= (sy - 1.0).abs() {
+        sx
+    } else {
+        sy
     }
 }
 

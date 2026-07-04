@@ -53,6 +53,7 @@ pub enum DragState {
         start_world: (f64, f64),
         orig: (f64, f64, f64, f64),
         rotation: f64,
+        aspect_ratio: Option<f64>,
     },
     Rotate {
         id: u64,

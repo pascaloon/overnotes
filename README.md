@@ -26,7 +26,8 @@ Built with Rust + [Dioxus 0.7](https://dioxuslabs.com/) (WebView2).
 Pan (drag), zoom (wheel), sticky notes with editable text and colors, freehand
 strokes with color/width options, images pasted from the clipboard or captured
 from the game with the region screenshot tool (Windows Graphics Capture).
-Objects can be moved, resized (8 handles), and rotated. Documents autosave as
+Objects can be moved, resized (8 handles), and rotated. Hold `Shift` while
+resizing an image to keep its aspect ratio. Documents autosave as
 JSON to `%APPDATA%\overnotes\data\documents\<game>\<doc-id>\doc.json`, with
 images stored alongside as PNG files.
 

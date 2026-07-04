@@ -28,6 +28,7 @@ pub fn ObjectView(id: u64) -> Element {
     };
     let (x, y, w, h, rotation) = (obj.x, obj.y, obj.w, obj.h, obj.rotation);
     let kind = obj.kind.clone();
+    let is_image = matches!(kind, ObjectKind::Image { .. });
     drop(doc);
 
     let interactive = editor_interactive(&state);
@@ -161,14 +162,21 @@ pub fn ObjectView(id: u64) -> Element {
                                     let o = doc.object(id).unwrap();
                                     ((o.x, o.y, o.w, o.h), o.rotation)
                                 };
+                                let aspect_ratio = if is_image && orig.3 > 0.0 {
+                                    Some(orig.2 / orig.3)
+                                } else {
+                                    None
+                                };
                                 state.drag.set(DragState::Resize {
                                     id,
                                     dir,
                                     start_world,
                                     orig,
                                     rotation: rot,
+                                    aspect_ratio,
                                 });
                             },
+                            title: if is_image { "Hold Shift to keep image ratio" },
                         }
                     }
 
