@@ -121,8 +121,12 @@ impl EditorState {
     }
 
     /// Return keyboard focus to the canvas viewport (e.g. after clicking an
-    /// object, so Delete/Escape keep working).
+    /// object, so Delete/Escape keep working). Skipped on the overlay so the
+    /// game keeps foreground and does not pause.
     pub fn focus_canvas(&self) {
+        if self.host == EditorHost::Overlay {
+            return;
+        }
         if let Some(mount) = self.viewport_mount.peek().clone() {
             spawn(async move {
                 let _ = mount.set_focus(true).await;

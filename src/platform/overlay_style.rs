@@ -3,7 +3,8 @@
 //! The overlay is a borderless, transparent, topmost window (created by tao).
 //! On top of that we add:
 //! - `WS_EX_TOOLWINDOW`: keep the overlay out of the taskbar and Alt-Tab.
-//! - `WS_EX_NOACTIVATE` (overview mode only): never steal focus from the game.
+//! - `WS_EX_NOACTIVATE`: keep the game foreground so it does not pause. Briefly
+//!   cleared only while a note textarea is open (see overlay focus policy).
 //!
 //! Click-through (`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`) is toggled through
 //! tao's `set_ignore_cursor_events`, not here.
@@ -27,8 +28,8 @@ pub fn apply_overlay_base(raw_hwnd: isize) {
     }
 }
 
-/// Toggle `WS_EX_NOACTIVATE`. Enabled in overview mode so the overlay can never
-/// take focus; disabled in edit mode so the user can type into notes.
+/// Toggle `WS_EX_NOACTIVATE`. Normally enabled so the overlay never steals
+/// game focus; disabled only while the user is typing into a note.
 pub fn set_noactivate(raw_hwnd: isize, on: bool) {
     unsafe {
         let hwnd = hwnd(raw_hwnd);

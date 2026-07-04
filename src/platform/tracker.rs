@@ -12,6 +12,8 @@ use std::sync::mpsc::channel;
 use std::sync::Mutex;
 
 use tokio::sync::mpsc::UnboundedSender;
+
+use super::game_input::InputShieldHandle;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -42,10 +44,12 @@ static STATE: Mutex<Option<TrackerState>> = Mutex::new(None);
 
 pub struct TrackerHandle {
     thread_id: u32,
+    pub shield: InputShieldHandle,
 }
 
 impl TrackerHandle {
     pub fn stop(&self) {
+        self.shield.stop();
         unsafe {
             let _ = PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
         }
@@ -65,6 +69,8 @@ pub fn start_tracking(
     overlay_hwnd: isize,
     tx: UnboundedSender<GameEvent>,
 ) -> TrackerHandle {
+    let shield = super::game_input::start_input_shield(game_hwnd);
+
     *STATE.lock().unwrap() = Some(TrackerState {
         game: game_hwnd,
         overlay: overlay_hwnd,
@@ -127,7 +133,7 @@ pub fn start_tracking(
         .expect("failed to spawn tracker thread");
 
     let thread_id = tid_rx.recv().expect("tracker thread failed to start");
-    TrackerHandle { thread_id }
+    TrackerHandle { thread_id, shield }
 }
 
 unsafe extern "system" fn win_event_proc(

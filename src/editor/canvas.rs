@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use super::objects::ObjectView;
-use super::{DragState, EditorState, Tool, ViewMode};
+use super::{DragState, EditorHost, EditorState, Tool, ViewMode};
 
 const MIN_ZOOM: f64 = 0.2;
 const MAX_ZOOM: f64 = 4.0;
@@ -47,9 +47,13 @@ pub fn Canvas() -> Element {
             onmounted: move |evt| {
                 let data = evt.data();
                 state.viewport_mount.set(Some(data.clone()));
-                spawn(async move {
-                    let _ = data.set_focus(true).await;
-                });
+                // On the overlay the game must stay foreground; keyboard focus
+                // is acquired only while editing a note textarea.
+                if state.host != EditorHost::Overlay {
+                    spawn(async move {
+                        let _ = data.set_focus(true).await;
+                    });
+                }
             },
 
             onmousedown: move |evt| {

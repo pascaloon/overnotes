@@ -32,12 +32,16 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
         let win = dioxus::desktop::window();
         let overlay_hwnd = win.window.hwnd();
         overlay_style::apply_overlay_base(overlay_hwnd);
+        overlay_style::set_noactivate(overlay_hwnd, true);
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<tracker::GameEvent>();
         let handle = tracker::start_tracking(game_hwnd, overlay_hwnd, tx);
+        // Overlay starts in edit mode.
+        handle.shield.set_active(true);
         Rc::new((handle, RefCell::new(Some(rx)), overlay_hwnd))
     });
     let overlay_hwnd = setup.2;
+    let shield = setup.0.shield;
 
     // Stop the tracker thread when the overlay goes away.
     {
@@ -65,7 +69,7 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
         });
     }
 
-    // Apply mode side effects: click-through + focus policy.
+    // Apply mode side effects: click-through, input shield, keep game foreground.
     let mode = state.mode;
     use_effect(move || {
         let current = *mode.read();
@@ -73,20 +77,32 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
         match current {
             ViewMode::Edit => {
                 let _ = win.set_ignore_cursor_events(false);
-                // tao rewrites GWL_EXSTYLE wholesale here, dropping our
-                // TOOLWINDOW bit - re-apply it.
+                shield.set_active(true);
                 overlay_style::apply_overlay_base(overlay_hwnd);
-                overlay_style::set_noactivate(overlay_hwnd, false);
-                overlay_style::focus_window(overlay_hwnd);
-                win.set_focus();
+                overlay_style::set_noactivate(overlay_hwnd, true);
+                overlay_style::focus_window(game_hwnd);
             }
             ViewMode::Overview => {
                 let _ = win.set_ignore_cursor_events(true);
+                shield.set_active(false);
                 overlay_style::apply_overlay_base(overlay_hwnd);
                 overlay_style::set_noactivate(overlay_hwnd, true);
-                // Hand focus back to the game.
                 overlay_style::focus_window(game_hwnd);
             }
+        }
+    });
+
+    // Typing into a note is the one case where the overlay needs keyboard focus.
+    let editing_note = state.editing_note;
+    use_effect(move || {
+        let typing = editing_note.read().is_some();
+        if typing {
+            overlay_style::set_noactivate(overlay_hwnd, false);
+            overlay_style::focus_window(overlay_hwnd);
+            dioxus::desktop::window().set_focus();
+        } else {
+            overlay_style::set_noactivate(overlay_hwnd, true);
+            overlay_style::focus_window(game_hwnd);
         }
     });
 
