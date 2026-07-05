@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub const DEFAULT_TOGGLE_SHORTCUT: &str = "ctrl+shift+KeyE";
+pub const DEFAULT_TOGGLE_SHORTCUT_LABEL: &str = "Ctrl+Shift+E";
+pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "ctrl+shift+KeyS";
+pub const DEFAULT_SCREENSHOT_SHORTCUT_LABEL: &str = "Ctrl+Shift+S";
 pub const DEFAULT_NOTE_COLOR: &str = "#e8c95c";
 pub const DEFAULT_NOTE_FONT_SIZE: f64 = 15.0;
 pub const DEFAULT_SUBGRAPH_COLOR: &str = "#d8a84d";
@@ -15,6 +19,55 @@ pub const SUBGRAPH_COLORS: [&str; 5] = ["#d8a84d", "#7aa2ff", "#7fd48a", "#c792e
 pub const STROKE_COLORS: [&str; 6] = [
     "#ffffff", "#7aa2ff", "#ff6b6b", "#7fd48a", "#ffd166", "#c792ea",
 ];
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct AppSettings {
+    #[serde(default = "default_toggle_shortcut")]
+    pub overlay_toggle_shortcut: KeyboardShortcut,
+    #[serde(default = "default_screenshot_shortcut")]
+    pub overlay_screenshot_shortcut: KeyboardShortcut,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            overlay_toggle_shortcut: default_toggle_shortcut(),
+            overlay_screenshot_shortcut: default_screenshot_shortcut(),
+        }
+    }
+}
+
+impl AppSettings {
+    fn normalized(mut self) -> Self {
+        if !is_supported_shortcut(&self.overlay_toggle_shortcut) {
+            self.overlay_toggle_shortcut = default_toggle_shortcut();
+        }
+        if !is_supported_shortcut(&self.overlay_screenshot_shortcut)
+            || self.overlay_screenshot_shortcut.accelerator
+                == self.overlay_toggle_shortcut.accelerator
+        {
+            self.overlay_screenshot_shortcut = default_screenshot_shortcut();
+        }
+        if self.overlay_screenshot_shortcut.accelerator == self.overlay_toggle_shortcut.accelerator
+        {
+            self.overlay_toggle_shortcut = default_toggle_shortcut();
+        }
+        self
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct KeyboardShortcut {
+    pub accelerator: String,
+    pub label: String,
+}
+
+impl KeyboardShortcut {
+    pub fn new(accelerator: String, label: String) -> Option<Self> {
+        let shortcut = Self { accelerator, label };
+        is_supported_shortcut(&shortcut).then_some(shortcut)
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Document {
@@ -471,11 +524,18 @@ fn fresh_id() -> String {
     format!("{nanos:x}")
 }
 
-fn documents_root() -> PathBuf {
-    let base = directories::ProjectDirs::from("", "", "overnotes")
+fn app_data_root() -> PathBuf {
+    directories::ProjectDirs::from("", "", "overnotes")
         .map(|d| d.data_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("documents")
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn documents_root() -> PathBuf {
+    app_data_root().join("documents")
+}
+
+fn settings_path() -> PathBuf {
+    app_data_root().join("settings.json")
 }
 
 /// Sanitize a game exe name into a folder-safe key ("Game.exe" -> "game").
@@ -553,4 +613,156 @@ pub fn image_data_url(doc: &Document, file: &str) -> Option<String> {
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(bytes)
     ))
+}
+
+pub fn load_settings() -> AppSettings {
+    let raw = std::fs::read_to_string(settings_path()).ok();
+    raw.and_then(|raw| serde_json::from_str::<AppSettings>(&raw).ok())
+        .unwrap_or_default()
+        .normalized()
+}
+
+pub fn save_settings(settings: &AppSettings) -> std::io::Result<()> {
+    let path = settings_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(&settings.clone().normalized())?;
+    std::fs::write(path, json)
+}
+
+fn default_toggle_shortcut() -> KeyboardShortcut {
+    KeyboardShortcut {
+        accelerator: DEFAULT_TOGGLE_SHORTCUT.to_string(),
+        label: DEFAULT_TOGGLE_SHORTCUT_LABEL.to_string(),
+    }
+}
+
+fn default_screenshot_shortcut() -> KeyboardShortcut {
+    KeyboardShortcut {
+        accelerator: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
+        label: DEFAULT_SCREENSHOT_SHORTCUT_LABEL.to_string(),
+    }
+}
+
+fn is_supported_shortcut(shortcut: &KeyboardShortcut) -> bool {
+    let tokens = shortcut.accelerator.split('+').collect::<Vec<_>>();
+    if tokens.is_empty() || shortcut.label.trim().is_empty() {
+        return false;
+    }
+    let Some(key) = tokens.last() else {
+        return false;
+    };
+    if key.trim().is_empty() {
+        return false;
+    }
+    let modifier_tokens = &tokens[..tokens.len().saturating_sub(1)];
+    if modifier_tokens
+        .iter()
+        .any(|token| !matches!(*token, "ctrl" | "shift" | "alt" | "super"))
+    {
+        return false;
+    }
+    if !modifier_tokens
+        .iter()
+        .any(|token| matches!(*token, "ctrl" | "alt" | "super"))
+    {
+        return false;
+    }
+    matches!(
+        *key,
+        "Backquote"
+            | "Backslash"
+            | "BracketLeft"
+            | "BracketRight"
+            | "Comma"
+            | "Digit0"
+            | "Digit1"
+            | "Digit2"
+            | "Digit3"
+            | "Digit4"
+            | "Digit5"
+            | "Digit6"
+            | "Digit7"
+            | "Digit8"
+            | "Digit9"
+            | "Equal"
+            | "KeyA"
+            | "KeyB"
+            | "KeyC"
+            | "KeyD"
+            | "KeyE"
+            | "KeyF"
+            | "KeyG"
+            | "KeyH"
+            | "KeyI"
+            | "KeyJ"
+            | "KeyK"
+            | "KeyL"
+            | "KeyM"
+            | "KeyN"
+            | "KeyO"
+            | "KeyP"
+            | "KeyQ"
+            | "KeyR"
+            | "KeyS"
+            | "KeyT"
+            | "KeyU"
+            | "KeyV"
+            | "KeyW"
+            | "KeyX"
+            | "KeyY"
+            | "KeyZ"
+            | "Minus"
+            | "Period"
+            | "Quote"
+            | "Semicolon"
+            | "Slash"
+            | "Backspace"
+            | "Enter"
+            | "Space"
+            | "Tab"
+            | "Delete"
+            | "End"
+            | "Home"
+            | "Insert"
+            | "PageDown"
+            | "PageUp"
+            | "PrintScreen"
+            | "ScrollLock"
+            | "ArrowDown"
+            | "ArrowLeft"
+            | "ArrowRight"
+            | "ArrowUp"
+            | "Numpad0"
+            | "Numpad1"
+            | "Numpad2"
+            | "Numpad3"
+            | "Numpad4"
+            | "Numpad5"
+            | "Numpad6"
+            | "Numpad7"
+            | "Numpad8"
+            | "Numpad9"
+            | "NumpadAdd"
+            | "NumpadDecimal"
+            | "NumpadDivide"
+            | "NumpadEnter"
+            | "NumpadEqual"
+            | "NumpadMultiply"
+            | "NumpadSubtract"
+            | "Escape"
+            | "F1"
+            | "F2"
+            | "F3"
+            | "F4"
+            | "F5"
+            | "F6"
+            | "F7"
+            | "F8"
+            | "F9"
+            | "F10"
+            | "F11"
+            | "F12"
+    )
 }

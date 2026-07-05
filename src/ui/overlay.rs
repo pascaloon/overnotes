@@ -2,24 +2,20 @@
 //!
 //! Hosts the shared editor over the game's client area. Two modes:
 //! - Overview: click-through, no chrome, overview opacity. The global
-//!   shortcut (Ctrl+Shift+E) switches to edit mode.
+//!   edit-mode shortcut switches to edit mode.
 //! - Edit: fully interactive, editing opacity.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::desktop::tao::platform::windows::WindowExtWindows;
-use dioxus::desktop::{use_global_shortcut, HotKeyState};
+use dioxus::desktop::{HotKeyState, ShortcutHandle};
 use dioxus::prelude::*;
+use global_hotkey::hotkey::HotKey;
 
 use crate::editor::{Editor, EditorHost, EditorState, ViewMode};
 use crate::platform::{overlay_style, tracker};
 use crate::store;
-
-pub const TOGGLE_SHORTCUT: &str = "ctrl+shift+KeyE";
-pub const TOGGLE_SHORTCUT_LABEL: &str = "Ctrl+Shift+E";
-pub const SCREENSHOT_SHORTCUT: &str = "ctrl+shift+KeyS";
-pub const SCREENSHOT_SHORTCUT_LABEL: &str = "Ctrl+Shift+S";
 
 #[component]
 pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Element {
@@ -92,34 +88,100 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
         }
     });
 
-    // Global shortcut: toggle overview <-> edit.
-    let mut toggle_state = state;
-    let _ = use_global_shortcut(TOGGLE_SHORTCUT, move |hk_state| {
-        if hk_state == HotKeyState::Pressed {
-            let current = *toggle_state.mode.peek();
-            let next = match current {
-                ViewMode::Overview => ViewMode::Edit,
-                ViewMode::Edit => ViewMode::Overview,
-            };
-            if next == ViewMode::Overview {
-                toggle_state.deselect();
-                toggle_state.menu_open.set(false);
-                toggle_state.cancel_region_screenshot();
-            }
-            toggle_state.mode.set(next);
-        }
-    });
-
-    // Global shortcut: start game-region screenshot.
-    let mut screenshot_state = state;
-    let _ = use_global_shortcut(SCREENSHOT_SHORTCUT, move |hk_state| {
-        if hk_state == HotKeyState::Pressed {
-            screenshot_state.start_region_screenshot();
-        }
-    });
-
     rsx! {
         document::Style { {super::STYLE} }
+        OverlayShortcut {
+            action: OverlayShortcutAction::ToggleEditMode,
+        }
+        OverlayShortcut {
+            action: OverlayShortcutAction::Screenshot,
+        }
         Editor {}
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum OverlayShortcutAction {
+    ToggleEditMode,
+    Screenshot,
+}
+
+#[component]
+fn OverlayShortcut(action: OverlayShortcutAction) -> Element {
+    let state = use_context::<EditorState>();
+    let mut registered = use_signal(|| None::<(String, ShortcutHandle)>);
+    let shortcut_handler = use_callback(move |hk_state: HotKeyState| {
+        if hk_state != HotKeyState::Pressed {
+            return;
+        }
+        let mut state = state;
+        match action {
+            OverlayShortcutAction::ToggleEditMode => toggle_edit_mode(state),
+            OverlayShortcutAction::Screenshot => state.start_region_screenshot(),
+        }
+    });
+
+    use_effect(move || {
+        let accelerator = {
+            let settings = state.settings.read();
+            match action {
+                OverlayShortcutAction::ToggleEditMode => {
+                    settings.overlay_toggle_shortcut.accelerator.clone()
+                }
+                OverlayShortcutAction::Screenshot => {
+                    settings.overlay_screenshot_shortcut.accelerator.clone()
+                }
+            }
+        };
+
+        if registered
+            .peek()
+            .as_ref()
+            .is_some_and(|(current, _)| current == &accelerator)
+        {
+            return;
+        }
+        if let Some((_, handle)) = registered.write().take() {
+            handle.remove();
+        }
+
+        let Ok(hotkey) = accelerator.parse::<HotKey>() else {
+            let mut state = state;
+            state.show_toast("Invalid overlay shortcut");
+            return;
+        };
+
+        match dioxus::desktop::window().create_shortcut(hotkey, move |hk_state| {
+            shortcut_handler.call(hk_state);
+        }) {
+            Ok(handle) => registered.set(Some((accelerator.clone(), handle))),
+            Err(_) => {
+                let mut state = state;
+                state.show_toast("Could not register overlay shortcut");
+                return;
+            }
+        }
+    });
+
+    use_drop(move || {
+        if let Some((_, handle)) = registered.write().take() {
+            handle.remove();
+        }
+    });
+
+    rsx! {}
+}
+
+fn toggle_edit_mode(mut state: EditorState) {
+    let current = *state.mode.peek();
+    let next = match current {
+        ViewMode::Overview => ViewMode::Edit,
+        ViewMode::Edit => ViewMode::Overview,
+    };
+    if next == ViewMode::Overview {
+        state.deselect();
+        state.menu_open.set(false);
+        state.cancel_region_screenshot();
+    }
+    state.mode.set(next);
 }

@@ -5,42 +5,7 @@ mod platform;
 mod store;
 mod ui;
 
-use std::sync::OnceLock;
-
 use dioxus::prelude::*;
-
-/// Direct-launch parameters for `--window` / `--overlay` (also usable as a
-/// fallback if the launcher flow is unavailable).
-struct DirectLaunch {
-    game_hwnd: isize,
-    game_exe: String,
-    doc_id: String,
-}
-
-static DIRECT: OnceLock<DirectLaunch> = OnceLock::new();
-
-#[component]
-fn DirectOverlay() -> Element {
-    let d = DIRECT.get().unwrap();
-    rsx! {
-        ui::overlay::OverlayRoot {
-            game_hwnd: d.game_hwnd,
-            game_exe: d.game_exe.clone(),
-            doc_id: d.doc_id.clone(),
-        }
-    }
-}
-
-#[component]
-fn DirectStandalone() -> Element {
-    let d = DIRECT.get().unwrap();
-    rsx! {
-        ui::standalone::StandaloneRoot {
-            game_exe: d.game_exe.clone(),
-            doc_id: d.doc_id.clone(),
-        }
-    }
-}
 
 /// First existing document for the game, or a fresh "Untitled" one.
 fn default_doc_for(game_exe: &str) -> String {
@@ -120,30 +85,29 @@ fn main() {
         let rect =
             platform::tracker::client_rect_on_screen(game.hwnd).unwrap_or((100, 100, 1024, 640));
         let doc_id = direct_doc_for(&game.exe, doc_arg);
-        let _ = DIRECT.set(DirectLaunch {
-            game_hwnd: game.hwnd,
-            game_exe: game.exe,
-            doc_id,
-        });
-        dioxus::LaunchBuilder::desktop()
-            .with_cfg(ui::overlay_config(rect))
-            .launch(DirectOverlay);
-        return;
+        let dom = VirtualDom::new_with_props(
+            ui::overlay::OverlayRoot,
+            ui::overlay::OverlayRootProps {
+                game_hwnd: game.hwnd,
+                game_exe: game.exe,
+                doc_id,
+            },
+        );
+        dioxus::desktop::launch::launch_virtual_dom(dom, ui::overlay_config(rect));
     }
 
     // `overnotes --window <game-exe> [--doc <doc-id>]`
     if let Some(i) = args.iter().position(|a| a == "--window") {
         let game_exe = args.get(i + 1).cloned().unwrap_or_else(|| "unknown".into());
         let doc_id = direct_doc_for(&game_exe, doc_arg);
-        let _ = DIRECT.set(DirectLaunch {
-            game_hwnd: 0,
-            game_exe,
-            doc_id,
-        });
-        dioxus::LaunchBuilder::desktop()
-            .with_cfg(ui::standalone_config("Untitled"))
-            .launch(DirectStandalone);
-        return;
+        let dom = VirtualDom::new_with_props(
+            ui::standalone::StandaloneRoot,
+            ui::standalone::StandaloneRootProps {
+                game_exe,
+                doc_id,
+            },
+        );
+        dioxus::desktop::launch::launch_virtual_dom(dom, ui::standalone_config("Untitled"));
     }
 
     dioxus::LaunchBuilder::desktop()

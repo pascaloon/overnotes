@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 
 use crate::store::{
-    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, DEFAULT_SUBGRAPH_COLOR,
-    Document, GraphView, ObjectKind,
+    self, AppSettings, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE,
+    DEFAULT_SUBGRAPH_COLOR, Document, GraphView, ObjectKind,
 };
 
 /// Where the editor is hosted.
@@ -114,6 +114,7 @@ pub struct EditorState {
     pub game_hwnd: Option<isize>,
     pub mode: Signal<ViewMode>,
     pub doc: Signal<Document>,
+    pub settings: Signal<AppSettings>,
     pub pan: Signal<(f64, f64)>,
     pub zoom: Signal<f64>,
     pub tool: Signal<Tool>,
@@ -146,6 +147,7 @@ impl EditorState {
             game_hwnd,
             mode: Signal::new(ViewMode::Edit),
             doc: Signal::new(doc),
+            settings: Signal::new(store::load_settings()),
             pan: Signal::new(view.pan()),
             zoom: Signal::new(view.zoom),
             tool: Signal::new(Tool::Select),

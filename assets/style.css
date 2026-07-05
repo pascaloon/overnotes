@@ -554,13 +554,6 @@ input[type="text"].subgraph-name-input {
   cursor: grab;
 }
 
-.color-row {
-  position: absolute;
-  display: flex;
-  gap: 6px;
-  z-index: 6;
-}
-
 .color-dot {
   position: relative;
   width: 16px;
@@ -647,28 +640,6 @@ input[type="text"].subgraph-name-input {
 .floating-object-toolbar-format:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
-}
-
-.floating-object-toolbar-size {
-  display: grid;
-  grid-template-columns: auto 82px auto;
-  align-items: center;
-  gap: 7px;
-  padding: 0 3px;
-  color: var(--text-dim);
-}
-
-.floating-object-toolbar-size input[type="range"] {
-  width: 82px;
-  min-width: 0;
-}
-
-.floating-object-toolbar-value {
-  min-width: 20px;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
 }
 
 /* ---------- editor chrome ---------- */
@@ -1099,6 +1070,33 @@ input[type="text"].subgraph-name-input {
   font-size: 12px;
   color: var(--text-dim);
   text-align: right;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 136px;
+  align-items: center;
+  gap: 10px;
+}
+
+.shortcut-title {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input[type="text"].shortcut-input {
+  height: 30px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* bottom bar */

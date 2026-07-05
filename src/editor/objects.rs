@@ -41,6 +41,10 @@ pub fn ObjectView(id: u64) -> Element {
         ObjectKind::Note { color, .. } => Some(color.clone()),
         _ => None,
     };
+    let subgraph_color = match &kind {
+        ObjectKind::Subgraph { color, .. } => Some(color.clone()),
+        _ => None,
+    };
     let is_image = matches!(kind, ObjectKind::Image { .. });
     let is_note = note_color.is_some();
     let is_subgraph = matches!(kind, ObjectKind::Subgraph { .. });
@@ -70,13 +74,6 @@ pub fn ObjectView(id: u64) -> Element {
     let drop_target = state.drop_target.read().clone();
     let is_drop_target = drop_target.as_ref().is_some_and(|target| target.id == id);
     let drag_state = state.drag.read().clone();
-    let text_size_dragging = matches!(
-        &drag_state,
-        DragState::NoteFontSize {
-            id: drag_id,
-            ..
-        } if *drag_id == id
-    );
     let is_being_moved = match &drag_state {
         DragState::MoveObjects { orig_positions, .. } => {
             orig_positions.iter().any(|(moving_id, _)| *moving_id == id)
@@ -312,7 +309,7 @@ pub fn ObjectView(id: u64) -> Element {
             if selected {
                 div { class: "sel-frame" }
 
-                if single_selected && is_note {
+                if single_selected && (is_note || is_subgraph) {
                     div {
                         class: "floating-object-toolbar",
                         style: "left: 50%; top: {-46.0 / zoom}px; transform: translateX(-50%) scale({1.0 / zoom}); transform-origin: top center;",
@@ -321,52 +318,11 @@ pub fn ObjectView(id: u64) -> Element {
                             evt.prevent_default();
                             evt.stop_propagation();
                         },
-                        if text_size_dragging {
-                            div {
-                                class: "floating-object-toolbar-size",
-                                class: "has-tooltip",
-                                aria_label: "Text size",
-                                svg {
-                                    width: "16",
-                                    height: "16",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    stroke: "currentColor",
-                                    stroke_width: "2",
-                                    stroke_linecap: "round",
-                                    stroke_linejoin: "round",
-                                    path { d: "M4 19 L9 5 L14 19" }
-                                    path { d: "M6 14 H12" }
-                                }
-                                input {
-                                    r#type: "range",
-                                    min: "{NOTE_FONT_SIZE_MIN}",
-                                    max: "{NOTE_FONT_SIZE_MAX}",
-                                    step: "1",
-                                    value: "{note_font_size.unwrap_or(15.0)}",
-                                    onmousedown: move |evt| evt.stop_propagation(),
-                                    oninput: move |evt| {
-                                        if let Ok(size) = evt.value().parse::<f64>() {
-                                            let path = state.current_graph_path.read().clone();
-                                            let mut doc = state.doc.write();
-                                            if let Some(o) = doc.object_at_path_mut(&path, id) {
-                                                if let ObjectKind::Note { font_size, .. } = &mut o.kind {
-                                                    *font_size = size.clamp(NOTE_FONT_SIZE_MIN, NOTE_FONT_SIZE_MAX);
-                                                }
-                                            }
-                                        }
-                                    },
-                                }
-                                span {
-                                    class: "floating-object-toolbar-value",
-                                    "{note_font_size.unwrap_or(15.0):.0}"
-                                }
-                            }
-                        } else {
+                        if is_note {
                             button {
                                 class: "floating-object-toolbar-format",
                                 class: "has-tooltip",
-                                aria_label: "Text size",
+                                aria_label: "Drag to resize text",
                                 onmousedown: move |evt| {
                                     evt.stop_propagation();
                                     evt.prevent_default();
@@ -390,27 +346,52 @@ pub fn ObjectView(id: u64) -> Element {
                                     path { d: "M6 14 H12" }
                                 }
                             }
+                            div { class: "floating-object-toolbar-divider" }
                         }
-                        div { class: "floating-object-toolbar-divider" }
-                        div {
-                            class: "floating-object-toolbar-colors",
-                            for color in NOTE_COLORS {
-                                div {
-                                    class: "color-dot",
-                                    class: if color == "transparent" { "transparent" },
-                                    class: if note_color.as_deref() == Some(color) { "active" },
-                                    style: "background-color: {color};",
-                                    onmousedown: move |evt| {
-                                        evt.stop_propagation();
-                                        evt.prevent_default();
-                                        let path = state.current_graph_path.read().clone();
-                                        let mut doc = state.doc.write();
-                                        if let Some(o) = doc.object_at_path_mut(&path, id) {
-                                            if let ObjectKind::Note { color: c, .. } = &mut o.kind {
-                                                *c = color.to_string();
+                        if is_note {
+                            div {
+                                class: "floating-object-toolbar-colors",
+                                for color in NOTE_COLORS {
+                                    div {
+                                        class: "color-dot",
+                                        class: if color == "transparent" { "transparent" },
+                                        class: if note_color.as_deref() == Some(color) { "active" },
+                                        style: "background-color: {color};",
+                                        onmousedown: move |evt| {
+                                            evt.stop_propagation();
+                                            evt.prevent_default();
+                                            let path = state.current_graph_path.read().clone();
+                                            let mut doc = state.doc.write();
+                                            if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                                if let ObjectKind::Note { color: c, .. } = &mut o.kind {
+                                                    *c = color.to_string();
+                                                }
                                             }
-                                        }
-                                    },
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                        if is_subgraph {
+                            div {
+                                class: "floating-object-toolbar-colors",
+                                for color in SUBGRAPH_COLORS {
+                                    div {
+                                        class: "color-dot",
+                                        class: if subgraph_color.as_deref() == Some(color) { "active" },
+                                        style: "background-color: {color};",
+                                        onmousedown: move |evt| {
+                                            evt.stop_propagation();
+                                            evt.prevent_default();
+                                            let path = state.current_graph_path.read().clone();
+                                            let mut doc = state.doc.write();
+                                            if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                                if let ObjectKind::Subgraph { color: c, .. } = &mut o.kind {
+                                                    *c = color.to_string();
+                                                }
+                                            }
+                                        },
+                                    }
                                 }
                             }
                         }
@@ -475,37 +456,6 @@ pub fn ObjectView(id: u64) -> Element {
                                 orig_rotation,
                             });
                         },
-                    }
-
-                    // Subgraph color palette.
-                    if matches!(
-                        state
-                            .doc
-                            .read()
-                            .object_at_path(&state.current_graph_path.read(), id)
-                            .map(|o| &o.kind),
-                        Some(ObjectKind::Subgraph { .. })
-                    ) {
-                        div {
-                            class: "color-row",
-                            style: "left: 4px; top: {h + 12.0 / zoom}px; transform: scale({1.0 / zoom}); transform-origin: top left;",
-                            for color in SUBGRAPH_COLORS {
-                                div {
-                                    class: "color-dot",
-                                    style: "background: {color};",
-                                    onmousedown: move |evt| {
-                                        evt.stop_propagation();
-                                        let path = state.current_graph_path.read().clone();
-                                        let mut doc = state.doc.write();
-                                        if let Some(o) = doc.object_at_path_mut(&path, id) {
-                                            if let ObjectKind::Subgraph { color: c, .. } = &mut o.kind {
-                                                *c = color.to_string();
-                                            }
-                                        }
-                                    },
-                                }
-                            }
-                        }
                     }
                 }
             }
