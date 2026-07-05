@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overnotes — Pin notes over your game</title>
+<meta name="description" content="Overnotes is a free, open-source overlay for Windows that lets you pin sticky notes, drawings and screenshots right on top of your game. Solve mysteries, keep reminders, never alt-tab again.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235c8bff'/%3E%3Cstop offset='1' stop-color='%239a6bff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Ctext x='32' y='44' font-family='Segoe UI,system-ui,sans-serif' font-size='34' font-weight='800' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="#top">
+    <span class="logo">O</span>
+    <span class="brand-name">Overnotes</span>
+  </a>
+  <nav class="site-nav">
+    <a class="nav-link" href="https://github.com/pascaloon/overnotes" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <a class="btn-download small" href="https://github.com/pascaloon/overnotes/releases/latest/download/overnotes.exe">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5"/><path d="M4 19h16"/></svg>
+      <span>Download</span>
+    </a>
+  </nav>
+</header>
+
+<main id="top">
+
+<!-- ====================== scrollytelling demo ====================== -->
+<section class="scrolly" id="demo">
+  <div class="stage" id="stage" data-tool="select">
+
+    <div class="scene-wrap" id="sceneWrap">
+
+      <!-- ================= the fake game ================= -->
+      <svg class="game-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-label="A stylized game scene: a hooded figure with a glowing sword stands before a sealed rune gate">
+        <defs>
+          <linearGradient id="bgSky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0d1c30"/>
+            <stop offset="0.6" stop-color="#081221"/>
+            <stop offset="1" stop-color="#050910"/>
+          </linearGradient>
+          <radialGradient id="portalGrad" cx="0.5" cy="0.35" r="0.85">
+            <stop offset="0" stop-color="#1d3f68"/>
+            <stop offset="0.55" stop-color="#0b1a2e"/>
+            <stop offset="1" stop-color="#05090f"/>
+          </radialGradient>
+          <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0b1424"/>
+            <stop offset="1" stop-color="#04070c"/>
+          </linearGradient>
+          <linearGradient id="cloakGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#182130"/>
+            <stop offset="1" stop-color="#0a0e16"/>
+          </linearGradient>
+          <linearGradient id="bladeGrad" x1="712" y1="600" x2="548" y2="812" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#ffffff"/>
+            <stop offset="1" stop-color="#9cc8ff"/>
+          </linearGradient>
+          <radialGradient id="vigGrad" cx="0.5" cy="0.45" r="0.75">
+            <stop offset="0.55" stop-color="rgba(0,0,0,0)"/>
+            <stop offset="1" stop-color="rgba(0,0,0,0.6)"/>
+          </radialGradient>
+          <linearGradient id="shaftGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="rgba(156,200,255,0.14)"/>
+            <stop offset="1" stop-color="rgba(156,200,255,0)"/>
+          </linearGradient>
+          <radialGradient id="flameGrad" cx="0.5" cy="0.6" r="0.6">
+            <stop offset="0" stop-color="#e8f4ff"/>
+            <stop offset="0.5" stop-color="#9cc8ff"/>
+            <stop offset="1" stop-color="rgba(122,162,255,0)"/>
+          </radialGradient>
+          <filter id="fGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="7"/>
+          </filter>
+          <filter id="fGlowBig" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="18"/>
+          </filter>
+          <filter id="fSoft" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="3"/>
+          </filter>
+        </defs>
+
+        <g id="scene">
+          <!-- background -->
+          <rect width="1600" height="900" fill="url(#bgSky)"/>
+          <polygon points="640,0 960,0 1250,900 350,900" fill="url(#shaftGrad)"/>
+
+          <!-- back wall hints -->
+          <g stroke="#152238" stroke-width="2" opacity="0.55">
+            <line x1="0" y1="150" x2="1600" y2="150"/>
+            <line x1="0" y1="255" x2="1600" y2="255"/>
+            <line x1="0" y1="360" x2="1600" y2="360"/>
+            <line x1="0" y1="465" x2="1600" y2="465"/>
+            <line x1="0" y1="570" x2="1600" y2="570"/>
+            <line x1="90" y1="150" x2="90" y2="255"/><line x1="330" y1="150" x2="330" y2="255"/><line x1="1270" y1="150" x2="1270" y2="255"/><line x1="1510" y1="150" x2="1510" y2="255"/>
+            <line x1="210" y1="255" x2="210" y2="360"/><line x1="450" y1="255" x2="450" y2="360"/><line x1="1150" y1="255" x2="1150" y2="360"/><line x1="1390" y1="255" x2="1390" y2="360"/>
+            <line x1="90" y1="360" x2="90" y2="465"/><line x1="330" y1="360" x2="330" y2="465"/><line x1="1270" y1="360" x2="1270" y2="465"/><line x1="1510" y1="360" x2="1510" y2="465"/>
+            <line x1="210" y1="465" x2="210" y2="570"/><line x1="1390" y1="465" x2="1390" y2="570"/>
+          </g>
+
+          <!-- hanging cages, side pillars -->
+          <g opacity="0.85">
+            <line x1="150" y1="0" x2="150" y2="90" stroke="#0c1420" stroke-width="4"/>
+            <ellipse cx="150" cy="118" rx="26" ry="34" fill="#060b12"/>
+            <line x1="1452" y1="0" x2="1452" y2="70" stroke="#0c1420" stroke-width="4"/>
+            <ellipse cx="1452" cy="100" rx="24" ry="32" fill="#060b12"/>
+          </g>
+          <g>
+            <rect x="118" y="60" width="96" height="650" fill="#0d1726"/>
+            <line x1="214" y1="60" x2="214" y2="710" stroke="#22344e" stroke-width="3" opacity="0.7"/>
+            <rect x="1386" y="60" width="96" height="650" fill="#0d1726"/>
+            <line x1="1386" y1="60" x2="1386" y2="710" stroke="#22344e" stroke-width="3" opacity="0.7"/>
+          </g>
+
+          <!-- torches (cold blue flames) -->
+          <g>
+            <rect x="228" y="330" width="14" height="44" rx="4" fill="#1a2536"/>
+            <ellipse cx="235" cy="312" rx="26" ry="34" fill="url(#flameGrad)" filter="url(#fSoft)">
+              <animate attributeName="opacity" values="0.65;1;0.75;0.95;0.65" dur="1.9s" repeatCount="indefinite"/>
+            </ellipse>
+            <rect x="1358" y="330" width="14" height="44" rx="4" fill="#1a2536"/>
+            <ellipse cx="1365" cy="312" rx="26" ry="34" fill="url(#flameGrad)" filter="url(#fSoft)">
+              <animate attributeName="opacity" values="0.9;0.6;1;0.7;0.9" dur="2.3s" repeatCount="indefinite"/>
+            </ellipse>
+          </g>
+
+          <!-- sealed gate -->
+          <path d="M 564 640 L 564 344 A 236 236 0 0 1 1036 344 L 1036 640 Z" fill="url(#portalGrad)"/>
+          <path d="M 520 640 L 520 340 A 280 280 0 0 1 1080 340 L 1080 640" fill="none" stroke="#1c2c44" stroke-width="56"/>
+          <path d="M 520 640 L 520 340 A 280 280 0 0 1 1080 340 L 1080 640" fill="none" stroke="#2b405e" stroke-width="52" stroke-dasharray="46 14" opacity="0.55"/>
+
+          <!-- rune on the gate -->
+          <g id="rune">
+            <g filter="url(#fGlowBig)" opacity="0.7">
+              <circle cx="800" cy="300" r="64" fill="none" stroke="#8fc4ff" stroke-width="10"/>
+            </g>
+            <g stroke="#a7d2ff" stroke-width="4.5" fill="none" filter="url(#fSoft)">
+              <circle cx="800" cy="300" r="62"/>
+              <polygon points="800,254 758,330 842,330"/>
+              <line x1="800" y1="254" x2="800" y2="376"/>
+              <circle cx="800" cy="300" r="7" fill="#e8f4ff" stroke="none"/>
+            </g>
+            <animate attributeName="opacity" values="0.55;1;0.7;1;0.55" dur="3.6s" repeatCount="indefinite"/>
+          </g>
+
+          <!-- steps + floor -->
+          <rect x="540" y="640" width="520" height="26" rx="4" fill="#101c2f"/>
+          <rect x="498" y="666" width="604" height="30" rx="4" fill="#0c1626"/>
+          <rect x="0" y="696" width="1600" height="204" fill="url(#floorGrad)"/>
+          <g stroke="#131f30" stroke-width="2.5" opacity="0.8">
+            <line x1="0" y1="726" x2="1600" y2="726"/>
+            <line x1="0" y1="772" x2="1600" y2="772"/>
+            <line x1="0" y1="832" x2="1600" y2="832"/>
+            <line x1="800" y1="696" x2="360" y2="900"/>
+            <line x1="800" y1="696" x2="1240" y2="900"/>
+            <line x1="800" y1="696" x2="40" y2="900"/>
+            <line x1="800" y1="696" x2="1560" y2="900"/>
+          </g>
+          <ellipse cx="800" cy="720" rx="280" ry="42" fill="#7fb7ff" opacity="0.07" filter="url(#fGlowBig)"/>
+
+          <!-- drifting mist -->
+          <g filter="url(#fGlowBig)">
+            <ellipse cx="420" cy="690" rx="220" ry="34" fill="#8fb6e8" opacity="0.06">
+              <animateTransform attributeName="transform" type="translate" values="0 0; 45 6; 0 0" dur="16s" repeatCount="indefinite"/>
+            </ellipse>
+            <ellipse cx="1180" cy="712" rx="260" ry="38" fill="#8fb6e8" opacity="0.05">
+              <animateTransform attributeName="transform" type="translate" values="0 0; -55 4; 0 0" dur="19s" repeatCount="indefinite"/>
+            </ellipse>
+          </g>
+
+          <!-- the drone -->
+          <g id="drone">
+            <polygon points="360,168 316,262 428,262" fill="#9cc8ff" opacity="0.07"/>
+            <g stroke="#93a7c4" stroke-width="4" fill="none">
+              <line x1="345" y1="148" x2="326" y2="138"/>
+              <line x1="375" y1="148" x2="394" y2="138"/>
+              <ellipse cx="322" cy="136" rx="14" ry="5"/>
+              <ellipse cx="398" cy="136" rx="14" ry="5"/>
+            </g>
+            <rect x="342" y="146" width="36" height="16" rx="7" fill="#8fa3bf"/>
+            <circle cx="360" cy="154" r="4" fill="#e8f4ff">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1.4s" repeatCount="indefinite"/>
+            </circle>
+            <animateTransform attributeName="transform" type="translate" values="0 0; 0 -14; 0 0" dur="5s" repeatCount="indefinite"/>
+          </g>
+
+          <!-- hooded figure -->
+          <g id="figure">
+            <!-- sword glow layers -->
+            <polygon points="690,588 714,608 562,824 544,806" fill="#cfe6ff" opacity="0.5" filter="url(#fGlowBig)"/>
+            <polygon points="690,588 714,608 562,824 544,806" fill="#e6f2ff" opacity="0.85" filter="url(#fGlow)"/>
+            <ellipse cx="556" cy="832" rx="92" ry="16" fill="#bfe0ff" opacity="0.22" filter="url(#fGlow)"/>
+            <!-- legs -->
+            <rect x="762" y="660" width="28" height="128" rx="8" fill="#0c1119"/>
+            <rect x="810" y="660" width="28" height="128" rx="8" fill="#0c1119"/>
+            <rect x="756" y="780" width="40" height="26" rx="7" fill="#080b10"/>
+            <rect x="806" y="780" width="40" height="26" rx="7" fill="#080b10"/>
+            <!-- arm + sword -->
+            <path d="M 742 520 C 716 544 702 570 698 598 L 726 606 C 732 576 746 552 764 536 Z" fill="#111826"/>
+            <rect x="688" y="586" width="30" height="18" rx="5" fill="#3a4657" transform="rotate(38 703 595)"/>
+            <polygon points="692,590 712,606 560,820 548,810" fill="url(#bladeGrad)"/>
+            <!-- poncho -->
+            <path d="M 800 452 C 706 470 656 552 648 646 C 700 674 756 684 800 684 C 844 684 900 674 952 646 C 944 552 894 470 800 452 Z" fill="url(#cloakGrad)"/>
+            <path d="M 948 640 C 900 668 846 680 800 682 C 830 680 890 668 940 636" stroke="#5e8cc9" stroke-width="3" opacity="0.4" fill="none"/>
+            <!-- chest straps -->
+            <rect x="774" y="500" width="52" height="9" rx="3" fill="#93a7c4" opacity="0.85"/>
+            <rect x="768" y="518" width="64" height="5" rx="2" fill="#93a7c4" opacity="0.4"/>
+            <rect x="780" y="532" width="40" height="4" rx="2" fill="#93a7c4" opacity="0.3"/>
+            <!-- hood -->
+            <path d="M 758 470 C 750 414 772 388 800 386 C 828 388 850 414 842 470 C 828 478 812 481 800 481 C 788 481 772 478 758 470 Z" fill="#131b29"/>
+            <ellipse cx="800" cy="452" rx="27" ry="21" fill="#04060a"/>
+            <path d="M 786 460 C 794 466 806 466 814 460" stroke="#7fb7ff" stroke-width="2.5" opacity="0.5" fill="none"/>
+          </g>
+
+          <!-- vignette -->
+          <rect width="1600" height="900" fill="url(#vigGrad)"/>
+        </g>
+      </svg>
+
+      <!-- fake game HUD -->
+      <div class="hud">
+        <div class="hud-tl">
+          <div class="hud-bar hp"><i></i></div>
+          <div class="hud-bar sp"><i></i></div>
+          <div class="hud-quest">&#9670; Open the sealed gate — sigils 2/3</div>
+        </div>
+        <div class="hud-tr">
+          <div class="minimap"><span class="mm-dot"></span><span class="mm-mark"></span></div>
+        </div>
+      </div>
+
+      <!-- overlay edit-mode backdrop -->
+      <div class="overlay-backdrop"></div>
+
+      <!-- ============ overlay canvas objects (scene space) ============ -->
+      <div class="canvas-objs">
+        <!-- freehand pen stroke circling the rune -->
+        <svg class="pen-svg" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true">
+          <path id="penPath" d="M 668 322 C 648 246 716 194 802 190 C 898 186 962 244 950 320 C 938 398 856 436 778 424 C 706 412 672 374 682 338 C 688 320 700 312 716 310"
+                fill="none" stroke="#ff6b6b" stroke-width="6" stroke-linecap="round"/>
+        </svg>
+
+        <!-- sticky note -->
+        <div class="ov-note" id="ovNote">
+          <span class="ov-note-text"><span id="typed"></span><span class="caret"></span></span>
+        </div>
+
+        <!-- screenshots -->
+        <div class="ov-shot shot1" id="shot1">
+          <svg viewBox="500 470 290 390" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><use href="#scene"/></svg>
+        </div>
+        <div class="ov-shot shot2" id="shot2">
+          <svg viewBox="280 70 190 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><use href="#scene"/></svg>
+        </div>
+
+        <!-- subgraph folder -->
+        <div class="ov-folder" id="ovFolder">
+          <svg class="folder-svg" viewBox="0 0 96 72" aria-hidden="true">
+            <path d="M6 14 Q6 8 12 8 L34 8 Q38 8 40 12 L44 18 L84 18 Q90 18 90 24 L90 60 Q90 66 84 66 L12 66 Q6 66 6 60 Z" fill="#d8a84d"/>
+            <path d="M6 26 L90 26 L90 60 Q90 66 84 66 L12 66 Q6 66 6 60 Z" fill="#e6bb66"/>
+          </svg>
+          <span class="ov-folder-name">Clues</span>
+        </div>
+        <div class="move-label" id="moveLabel">Move to &ldquo;Clues&rdquo;</div>
+      </div>
+
+      <!-- screenshot capture UI -->
+      <div class="crop-rect" id="cropRect"></div>
+      <div class="shot-flash"></div>
+    </div><!-- /scene-wrap -->
+
+    <!-- ============ overlay chrome (edit mode) ============ -->
+    <div class="chrome">
+      <div class="hamburger" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </div>
+      <div class="breadcrumbs"><span class="crumb current">Root</span></div>
+
+      <div class="toolbar">
+        <div class="tool-btn tool-select" id="toolSelect" title="Select">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M6 3l12 9-5.2 1 3 6.2-2.4 1.1-3-6.2L6 18z"/></svg>
+        </div>
+        <div class="tool-btn tool-note" id="toolNote" title="Note">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9L14.5 20h-9A1.5 1.5 0 0 1 4 18.5z"/><path d="M14.5 20v-4a1.5 1.5 0 0 1 1.5-1.5h4"/></svg>
+        </div>
+        <div class="tool-btn tool-sub" id="toolSub" title="Subgraph">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h9A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+        </div>
+        <div class="tool-btn tool-draw" id="toolDraw" title="Draw">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c.5-2.5.8-3.7 1.8-4.7L16.6 4.5a2.1 2.1 0 0 1 3 3L8.7 18.2c-1 1-2.2 1.3-4.7 1.8z"/></svg>
+        </div>
+        <div class="tool-btn tool-img" id="toolImg" title="Paste image">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.2" cy="9.2" r="1.6"/><path d="M4 17l4.5-4.5 3 3L16 11l4 4"/></svg>
+        </div>
+      </div>
+
+      <div class="draw-opts">
+        <span class="opt-label">Stroke</span>
+        <div class="swatch-row">
+          <span class="swatch" style="background:#ffffff"></span>
+          <span class="swatch" style="background:#7aa2ff"></span>
+          <span class="swatch active" style="background:#ff6b6b"></span>
+          <span class="swatch" style="background:#7fd48a"></span>
+          <span class="swatch" style="background:#ffd166"></span>
+          <span class="swatch" style="background:#c792ea"></span>
+        </div>
+        <span class="opt-label">Width</span>
+        <div class="fake-slider"><i></i></div>
+      </div>
+
+      <div class="bottombar">
+        <div class="bar-btn" id="btnShot">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.6-2h5.8L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.2"/></svg>
+          <span>Screenshot</span>
+        </div>
+        <div class="divider"></div>
+        <div class="bar-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="5" width="13" height="10" rx="1.5"/><path d="M16 12h5v7h-8v-4"/></svg>
+          <span>Detach</span>
+        </div>
+        <div class="divider"></div>
+        <div class="bar-btn danger">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span>Close</span>
+        </div>
+      </div>
+    </div><!-- /chrome -->
+
+    <!-- shot hint -->
+    <div class="shot-hint" id="shotHint">Drag to capture a region &middot; Esc to cancel</div>
+
+    <!-- hotkey indicators -->
+    <div class="hotkey hotkey-e" id="hotkeyE">
+      <span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>E</kbd></span>
+      <span class="hotkey-label">Toggle edit mode</span>
+    </div>
+    <div class="hotkey hotkey-s" id="hotkeyS">
+      <span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>S</kbd></span>
+      <span class="hotkey-label">Screenshot</span>
+    </div>
+
+    <!-- hero -->
+    <div class="hero" id="hero">
+      <h1>Pin notes over your game.</h1>
+      <p>Overnotes is a free, open-source overlay canvas for Windows.<br>Sticky notes, drawings and screenshots — right on top of your game.</p>
+      <div class="hero-actions">
+        <a class="btn-download" href="https://github.com/pascaloon/overnotes/releases/latest/download/overnotes.exe">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5"/><path d="M4 19h16"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn-ghost" href="https://github.com/pascaloon/overnotes" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+      <div class="scroll-hint">
+        <span>Scroll to see it in action</span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0 6-6m-6 6-6-6"/></svg>
+      </div>
+    </div>
+
+    <!-- scene captions -->
+    <div class="caption" id="cap1">
+      <span class="cap-kicker">The overlay</span>
+      <span class="cap-title">One hotkey away</span>
+      <span class="cap-text">Press the hotkey and Overnotes fades in over your game. No alt-tabbing, no second screen required.</span>
+    </div>
+    <div class="caption" id="cap2">
+      <span class="cap-kicker">Sticky notes</span>
+      <span class="cap-title">Write it down before you forget</span>
+      <span class="cap-text">Drop a note anywhere on the infinite canvas. Colors, font sizes, rotation — it&rsquo;s your board.</span>
+    </div>
+    <div class="caption" id="cap3">
+      <span class="cap-kicker">Freehand drawing</span>
+      <span class="cap-title">Circle the suspicious stuff</span>
+      <span class="cap-text">Sketch right over the game with the pen tool. Six colors, any thickness.</span>
+    </div>
+    <div class="caption" id="cap4">
+      <span class="cap-kicker">Region screenshots</span>
+      <span class="cap-title">Clip evidence straight from the game</span>
+      <span class="cap-text">Hit the screenshot hotkey, drag over a region, and the crop lands on your canvas as an image.</span>
+    </div>
+    <div class="caption" id="cap5">
+      <span class="cap-kicker">Subgraphs</span>
+      <span class="cap-title">Folders, but spatial</span>
+      <span class="cap-text">Group notes and clues into nested canvases. Double-click to dive in, breadcrumbs to climb back out.</span>
+    </div>
+    <div class="caption" id="cap6">
+      <span class="cap-kicker">Overview mode</span>
+      <span class="cap-title">Back to playing</span>
+      <span class="cap-text">Toggle back and your notes stay pinned — semi-transparent and click-through while you play.</span>
+    </div>
+
+    <!-- fake cursor + click ring -->
+    <div class="click-ring" id="ring"></div>
+    <div class="fake-cursor" id="cursor">
+      <svg viewBox="0 0 20 20" width="22" height="22"><path d="M2 1l0 15.2 4.2-3.4 2.8 6.1 2.6-1.2-2.8-6 5.5-.6z" fill="#fff" stroke="#10131a" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </div>
+
+  </div><!-- /stage -->
+</section>
+
+<!-- ====================== download ====================== -->
+<section class="download" id="download">
+  <div class="wrap">
+    <h2>Take notes where you play.</h2>
+    <p class="dl-sub">One small .exe — no installer, no account, no telemetry drama.</p>
+    <a class="btn-download big" href="https://github.com/pascaloon/overnotes/releases/latest/download/overnotes.exe">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5"/><path d="M4 19h16"/></svg>
+      Download overnotes.exe
+    </a>
+    <p class="dl-fine">Windows 10 / 11 &middot; Free &amp; open source &middot; <a href="https://github.com/pascaloon/overnotes/releases/latest" target="_blank" rel="noopener">Latest release notes</a></p>
+  </div>
+</section>
+
+<!-- ====================== feature recap ====================== -->
+<section class="features">
+  <div class="wrap">
+    <h2>And the fine print is nice too</h2>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2.2 2.2L15.5 10" stroke-linecap="round"/></svg></div>
+        <h3>No game hooks</h3>
+        <p>Overnotes is a separate composited window — the same technique as Discord&rsquo;s overlay. Nothing is ever injected into your game.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 6.5A1.5 1.5 0 0 1 5.5 5h4l2 2.5h7A1.5 1.5 0 0 1 20 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><path d="M8 13h8M8 16h5" stroke-linecap="round"/></svg></div>
+        <h3>Per-game libraries</h3>
+        <p>Documents are organized per game and autosaved as plain JSON on your disk. Your notes are always yours.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" stroke-linecap="round" stroke-width="2.2"/></svg></div>
+        <h3>Custom hotkeys</h3>
+        <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> out of the box — rebind both to whatever fits your muscle memory.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="2.5" y="4" width="12" height="9" rx="1.5"/><rect x="10" y="11" width="11.5" height="9" rx="1.5"/></svg></div>
+        <h3>Second-monitor mode</h3>
+        <p>Prefer a normal window? Open any document standalone, or detach the overlay mid-session and keep editing.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M9 21h6M12 17v4" stroke-linecap="round"/></svg></div>
+        <h3>Windowed &amp; borderless</h3>
+        <p>The overlay glues itself to your game&rsquo;s window and follows it around — windowed and borderless-fullscreen games both work.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg></div>
+        <h3>Free &amp; open source</h3>
+        <p>Vibe-coded with love, zero cost, all on GitHub. Found a bug? There will be some — issues and PRs welcome.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-brand"><span class="logo small">O</span> Overnotes</div>
+    <p>Vibe-coded, free and open source. Not affiliated with any game.</p>
+    <a href="https://github.com/pascaloon/overnotes" target="_blank" rel="noopener">github.com/pascaloon/overnotes</a>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
