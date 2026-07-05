@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_NOTE_COLOR: &str = "#e8c95c";
+pub const DEFAULT_SUBGRAPH_COLOR: &str = "#d8a84d";
 pub const NOTE_COLORS: [&str; 4] = ["#e8c95c", "#8fd18a", "#8db8f2", "#eb9bb9"];
+pub const SUBGRAPH_COLORS: [&str; 5] = ["#d8a84d", "#7aa2ff", "#7fd48a", "#c792ea", "#ff8a65"];
 pub const STROKE_COLORS: [&str; 6] = [
     "#ffffff", "#7aa2ff", "#ff6b6b", "#7fd48a", "#ffd166", "#c792ea",
 ];
@@ -58,12 +60,24 @@ pub enum ObjectKind {
         /// PNG filename inside the document folder.
         file: String,
     },
+    Subgraph {
+        name: String,
+        color: String,
+        #[serde(default)]
+        objects: Vec<CanvasObject>,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DocMeta {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct SubgraphDestination {
+    pub path: Vec<u64>,
+    pub label: String,
 }
 
 impl Document {
@@ -85,23 +99,203 @@ impl Document {
         id
     }
 
-    pub fn object_mut(&mut self, id: u64) -> Option<&mut CanvasObject> {
-        self.objects.iter_mut().find(|o| o.id == id)
+    pub fn objects_at_path(&self, path: &[u64]) -> Option<&[CanvasObject]> {
+        let mut objects = self.objects.as_slice();
+        for id in path {
+            let obj = objects.iter().find(|o| o.id == *id)?;
+            let ObjectKind::Subgraph { objects: child, .. } = &obj.kind else {
+                return None;
+            };
+            objects = child.as_slice();
+        }
+        Some(objects)
     }
 
-    pub fn object(&self, id: u64) -> Option<&CanvasObject> {
-        self.objects.iter().find(|o| o.id == id)
+    pub fn objects_at_path_mut(&mut self, path: &[u64]) -> Option<&mut Vec<CanvasObject>> {
+        let mut objects = &mut self.objects;
+        for id in path {
+            let pos = objects.iter().position(|o| o.id == *id)?;
+            let ObjectKind::Subgraph { objects: child, .. } = &mut objects[pos].kind else {
+                return None;
+            };
+            objects = child;
+        }
+        Some(objects)
     }
 
-    pub fn remove_object(&mut self, id: u64) {
-        self.objects.retain(|o| o.id != id);
+    pub fn object_at_path(&self, path: &[u64], id: u64) -> Option<&CanvasObject> {
+        self.objects_at_path(path)?.iter().find(|o| o.id == id)
+    }
+
+    pub fn object_at_path_mut(&mut self, path: &[u64], id: u64) -> Option<&mut CanvasObject> {
+        self.objects_at_path_mut(path)?
+            .iter_mut()
+            .find(|o| o.id == id)
+    }
+
+    pub fn remove_object_at_path(&mut self, path: &[u64], id: u64) -> Option<CanvasObject> {
+        let objects = self.objects_at_path_mut(path)?;
+        let pos = objects.iter().position(|o| o.id == id)?;
+        Some(objects.remove(pos))
     }
 
     /// Move an object to the end of the list so it renders on top.
-    pub fn raise_object(&mut self, id: u64) {
-        if let Some(pos) = self.objects.iter().position(|o| o.id == id) {
-            let obj = self.objects.remove(pos);
-            self.objects.push(obj);
+    pub fn raise_object_at_path(&mut self, path: &[u64], id: u64) {
+        let Some(objects) = self.objects_at_path_mut(path) else {
+            return;
+        };
+        if let Some(pos) = objects.iter().position(|o| o.id == id) {
+            let obj = objects.remove(pos);
+            objects.push(obj);
+        }
+    }
+
+    pub fn move_object_into_subgraph(&mut self, path: &[u64], id: u64, target_id: u64) -> bool {
+        if id == target_id {
+            return false;
+        }
+        let Some(objects) = self.objects_at_path_mut(path) else {
+            return false;
+        };
+        if !matches!(
+            objects.iter().find(|o| o.id == target_id).map(|o| &o.kind),
+            Some(ObjectKind::Subgraph { .. })
+        ) {
+            return false;
+        }
+        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+            return false;
+        };
+        let obj = objects.remove(pos);
+        let Some(target) = objects.iter_mut().find(|o| o.id == target_id) else {
+            objects.insert(pos, obj);
+            return false;
+        };
+        let ObjectKind::Subgraph { objects: child, .. } = &mut target.kind else {
+            objects.insert(pos, obj);
+            return false;
+        };
+        child.push(obj);
+        true
+    }
+
+    pub fn move_object_to_graph(&mut self, source_path: &[u64], id: u64, target_path: &[u64]) -> bool {
+        if source_path == target_path || target_path.contains(&id) {
+            return false;
+        }
+        let Some(obj) = self.remove_object_at_path(source_path, id) else {
+            return false;
+        };
+        let Some(target_objects) = self.objects_at_path_mut(target_path) else {
+            let Some(source_objects) = self.objects_at_path_mut(source_path) else {
+                return false;
+            };
+            source_objects.push(obj);
+            return false;
+        };
+        target_objects.push(obj);
+        true
+    }
+
+    pub fn breadcrumb_names(&self, path: &[u64]) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut objects = self.objects.as_slice();
+        for id in path {
+            let Some(obj) = objects.iter().find(|o| o.id == *id) else {
+                break;
+            };
+            let ObjectKind::Subgraph {
+                name,
+                objects: child,
+                ..
+            } = &obj.kind
+            else {
+                break;
+            };
+            names.push(name.clone());
+            objects = child.as_slice();
+        }
+        names
+    }
+
+    pub fn image_objects(&self) -> Vec<(u64, String)> {
+        let mut out = Vec::new();
+        collect_image_objects(&self.objects, &mut out);
+        out
+    }
+
+    pub fn subgraph_destinations(&self, moving_id: u64, source_path: &[u64]) -> Vec<SubgraphDestination> {
+        let mut out = Vec::new();
+        collect_subgraph_destinations(
+            &self.objects,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            moving_id,
+            source_path,
+            &mut out,
+        );
+        out
+    }
+}
+
+impl CanvasObject {
+    pub fn image_ids_recursive(&self) -> Vec<u64> {
+        let mut out = Vec::new();
+        collect_image_ids_in_object(self, &mut out);
+        out
+    }
+}
+
+fn collect_image_objects(objects: &[CanvasObject], out: &mut Vec<(u64, String)>) {
+    for obj in objects {
+        match &obj.kind {
+            ObjectKind::Image { file } => out.push((obj.id, file.clone())),
+            ObjectKind::Subgraph { objects, .. } => collect_image_objects(objects, out),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } => {}
+        }
+    }
+}
+
+fn collect_image_ids_in_object(obj: &CanvasObject, out: &mut Vec<u64>) {
+    match &obj.kind {
+        ObjectKind::Image { .. } => out.push(obj.id),
+        ObjectKind::Subgraph { objects, .. } => {
+            for child in objects {
+                collect_image_ids_in_object(child, out);
+            }
+        }
+        ObjectKind::Note { .. } | ObjectKind::Drawing { .. } => {}
+    }
+}
+
+fn collect_subgraph_destinations(
+    objects: &[CanvasObject],
+    path: &mut Vec<u64>,
+    names: &mut Vec<String>,
+    moving_id: u64,
+    source_path: &[u64],
+    out: &mut Vec<SubgraphDestination>,
+) {
+    for obj in objects {
+        if let ObjectKind::Subgraph {
+            name,
+            objects: child,
+            ..
+        } = &obj.kind
+        {
+            path.push(obj.id);
+            names.push(name.clone());
+
+            if obj.id != moving_id && !path.contains(&moving_id) && path.as_slice() != source_path {
+                out.push(SubgraphDestination {
+                    path: path.clone(),
+                    label: names.join(" / "),
+                });
+            }
+
+            collect_subgraph_destinations(child, path, names, moving_id, source_path, out);
+            names.pop();
+            path.pop();
         }
     }
 }
@@ -130,7 +324,13 @@ pub fn game_key(game_exe: &str) -> String {
         .trim_end_matches(".exe")
         .to_lowercase();
     stem.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 

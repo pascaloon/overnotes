@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 
 use super::canvas::{editor_interactive, points_attr};
 use super::{DragState, EditorState, Tool};
-use crate::store::{ObjectKind, NOTE_COLORS};
+use crate::store::{NOTE_COLORS, ObjectKind, SUBGRAPH_COLORS};
 
 const RESIZE_DIRS: [(&str, f64, f64, &str); 8] = [
     ("nw", 0.0, 0.0, "nwse-resize"),
@@ -22,8 +22,9 @@ const RESIZE_DIRS: [(&str, f64, f64, &str); 8] = [
 pub fn ObjectView(id: u64) -> Element {
     let mut state = use_context::<EditorState>();
 
+    let graph_path = state.current_graph_path.read().clone();
     let doc = state.doc.read();
-    let Some(obj) = doc.object(id) else {
+    let Some(obj) = doc.object_at_path(&graph_path, id) else {
         return rsx! {};
     };
     let (x, y, w, h, rotation) = (obj.x, obj.y, obj.w, obj.h, obj.rotation);
@@ -34,6 +35,7 @@ pub fn ObjectView(id: u64) -> Element {
     let interactive = editor_interactive(&state);
     let selected = interactive && *state.selected.read() == Some(id);
     let editing = *state.editing_note.read() == Some(id);
+    let editing_subgraph = *state.editing_subgraph.read() == Some(id);
     let tool = *state.tool.read();
     let zoom = *state.zoom.read();
 
@@ -42,7 +44,11 @@ pub fn ObjectView(id: u64) -> Element {
             return;
         }
         evt.stop_propagation();
+        if evt.trigger_button() != Some(dioxus::html::input_data::MouseButton::Primary) {
+            return;
+        }
         state.menu_open.set(false);
+        state.close_context_menu();
         if *state.editing_note.peek() == Some(id) {
             // Editing this note's text: let the textarea take the event.
             return;
@@ -53,7 +59,8 @@ pub fn ObjectView(id: u64) -> Element {
         let start_world = state.screen_to_world(coords.x, coords.y);
         let orig_pos = {
             let doc = state.doc.peek();
-            let o = doc.object(id).unwrap();
+            let path = state.current_graph_path.peek().clone();
+            let o = doc.object_at_path(&path, id).unwrap();
             (o.x, o.y)
         };
         state.drag.set(DragState::MoveObject {
@@ -71,17 +78,40 @@ pub fn ObjectView(id: u64) -> Element {
             class: "obj",
             style: "left: {x}px; top: {y}px; width: {w}px; height: {h}px; transform: rotate({rotation}deg);",
             onmousedown: on_body_down,
+            oncontextmenu: move |evt| {
+                if !interactive || tool != Tool::Select {
+                    return;
+                }
+                evt.prevent_default();
+                evt.stop_propagation();
+                let coords = evt.client_coordinates();
+                state.open_object_context_menu(id, coords.x, coords.y);
+            },
             ondoubleclick: move |evt| {
                 if !interactive || tool != Tool::Select {
                     return;
                 }
                 evt.stop_propagation();
                 if matches!(
-                    state.doc.peek().object(id).map(|o| &o.kind),
+                    state
+                        .doc
+                        .peek()
+                        .object_at_path(&state.current_graph_path.peek(), id)
+                        .map(|o| &o.kind),
                     Some(ObjectKind::Note { .. })
                 ) {
                     state.selected.set(Some(id));
                     state.editing_note.set(Some(id));
+                    state.editing_subgraph.set(None);
+                } else if matches!(
+                    state
+                        .doc
+                        .peek()
+                        .object_at_path(&state.current_graph_path.peek(), id)
+                        .map(|o| &o.kind),
+                    Some(ObjectKind::Subgraph { .. })
+                ) {
+                    state.enter_subgraph(id);
                 }
             },
 
@@ -104,8 +134,9 @@ pub fn ObjectView(id: u64) -> Element {
                                 },
                                 onmousedown: move |evt| evt.stop_propagation(),
                                 oninput: move |evt| {
+                                    let path = state.current_graph_path.read().clone();
                                     let mut doc = state.doc.write();
-                                    if let Some(o) = doc.object_mut(id) {
+                                    if let Some(o) = doc.object_at_path_mut(&path, id) {
                                         if let ObjectKind::Note { text, .. } = &mut o.kind {
                                             *text = evt.value();
                                         }
@@ -141,6 +172,76 @@ pub fn ObjectView(id: u64) -> Element {
                     rsx! {
                         img { class: "obj-img", src: "{url}", draggable: "false" }
                     }
+                },
+                ObjectKind::Subgraph { ref name, ref color, .. } => rsx! {
+                    div { class: "subgraph-body",
+                        svg {
+                            class: "folder-icon",
+                            view_box: "0 0 96 72",
+                            preserve_aspect_ratio: "xMidYMid meet",
+                            path {
+                                d: "M8 18 H36 L43 28 H88 V60 Q88 66 82 66 H14 Q8 66 8 60 Z",
+                                fill: "{color}",
+                            }
+                            path {
+                                d: "M8 18 Q8 12 14 12 H31 Q35 12 38 16 L43 23 H82 Q88 23 88 29 V34 H8 Z",
+                                fill: "{color}",
+                                opacity: "0.82",
+                            }
+                            path {
+                                d: "M8 34 H88 V60 Q88 66 82 66 H14 Q8 66 8 60 Z",
+                                fill: "{color}",
+                            }
+                            path {
+                                d: "M12 37 H84",
+                                stroke: "rgba(255,255,255,0.28)",
+                                stroke_width: "2",
+                            }
+                        }
+                        if editing_subgraph {
+                            input {
+                                class: "subgraph-name subgraph-name-input",
+                                r#type: "text",
+                                value: "{name}",
+                                spellcheck: "false",
+                                onmounted: move |evt| {
+                                    let data = evt.data();
+                                    spawn(async move {
+                                        let _ = data.set_focus(true).await;
+                                    });
+                                },
+                                onmousedown: move |evt| evt.stop_propagation(),
+                                oninput: move |evt| {
+                                    let path = state.current_graph_path.read().clone();
+                                    let mut doc = state.doc.write();
+                                    if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                        if let ObjectKind::Subgraph { name, .. } = &mut o.kind {
+                                            *name = evt.value();
+                                        }
+                                    }
+                                },
+                                onkeydown: move |evt| {
+                                    evt.stop_propagation();
+                                    if matches!(evt.key(), Key::Enter | Key::Escape) {
+                                        state.editing_subgraph.set(None);
+                                        state.focus_canvas();
+                                    }
+                                },
+                            }
+                        } else {
+                            div {
+                                class: "subgraph-name",
+                                title: "Double-click to rename",
+                                ondoubleclick: move |evt| {
+                                    evt.stop_propagation();
+                                    state.selected.set(Some(id));
+                                    state.editing_note.set(None);
+                                    state.editing_subgraph.set(Some(id));
+                                },
+                                "{name}"
+                            }
+                        }
+                    }
                 }
             }
 
@@ -159,7 +260,8 @@ pub fn ObjectView(id: u64) -> Element {
                                 let start_world = state.screen_to_world(coords.x, coords.y);
                                 let (orig, rot) = {
                                     let doc = state.doc.peek();
-                                    let o = doc.object(id).unwrap();
+                                    let path = state.current_graph_path.peek().clone();
+                                    let o = doc.object_at_path(&path, id).unwrap();
                                     ((o.x, o.y, o.w, o.h), o.rotation)
                                 };
                                 let aspect_ratio = if is_image && orig.3 > 0.0 {
@@ -188,7 +290,8 @@ pub fn ObjectView(id: u64) -> Element {
                             evt.stop_propagation();
                             let (center, orig_rotation) = {
                                 let doc = state.doc.peek();
-                                let o = doc.object(id).unwrap();
+                                let path = state.current_graph_path.peek().clone();
+                                let o = doc.object_at_path(&path, id).unwrap();
                                 ((o.x + o.w / 2.0, o.y + o.h / 2.0), o.rotation)
                             };
                             let center_screen = state.world_to_screen(center.0, center.1);
@@ -207,7 +310,11 @@ pub fn ObjectView(id: u64) -> Element {
 
                     // Note color palette.
                     if matches!(
-                        state.doc.read().object(id).map(|o| &o.kind),
+                        state
+                            .doc
+                            .read()
+                            .object_at_path(&state.current_graph_path.read(), id)
+                            .map(|o| &o.kind),
                         Some(ObjectKind::Note { .. })
                     ) {
                         div {
@@ -219,9 +326,38 @@ pub fn ObjectView(id: u64) -> Element {
                                     style: "background: {color};",
                                     onmousedown: move |evt| {
                                         evt.stop_propagation();
+                                        let path = state.current_graph_path.read().clone();
                                         let mut doc = state.doc.write();
-                                        if let Some(o) = doc.object_mut(id) {
+                                        if let Some(o) = doc.object_at_path_mut(&path, id) {
                                             if let ObjectKind::Note { color: c, .. } = &mut o.kind {
+                                                *c = color.to_string();
+                                            }
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                    } else if matches!(
+                        state
+                            .doc
+                            .read()
+                            .object_at_path(&state.current_graph_path.read(), id)
+                            .map(|o| &o.kind),
+                        Some(ObjectKind::Subgraph { .. })
+                    ) {
+                        div {
+                            class: "color-row",
+                            style: "left: 4px; top: {h + 12.0 / zoom}px; transform: scale({1.0 / zoom}); transform-origin: top left;",
+                            for color in SUBGRAPH_COLORS {
+                                div {
+                                    class: "color-dot",
+                                    style: "background: {color};",
+                                    onmousedown: move |evt| {
+                                        evt.stop_propagation();
+                                        let path = state.current_graph_path.read().clone();
+                                        let mut doc = state.doc.write();
+                                        if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                            if let ObjectKind::Subgraph { color: c, .. } = &mut o.kind {
                                                 *c = color.to_string();
                                             }
                                         }

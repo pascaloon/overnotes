@@ -29,10 +29,17 @@ pub fn Canvas() -> Element {
         Tool::Select => "tool-select",
         Tool::Note => "tool-note",
         Tool::Draw => "tool-draw",
+        Tool::Subgraph => "tool-subgraph",
     };
     let panning = matches!(*state.drag.read(), DragState::Pan { .. });
 
-    let object_ids: Vec<u64> = state.doc.read().objects.iter().map(|o| o.id).collect();
+    let graph_path = state.current_graph_path.read().clone();
+    let object_ids: Vec<u64> = state
+        .doc
+        .read()
+        .objects_at_path(&graph_path)
+        .map(|objects| objects.iter().map(|o| o.id).collect())
+        .unwrap_or_default();
 
     let live = state.live_points.read().clone();
     let live_stroke = state.stroke_color.read().clone();
@@ -59,8 +66,14 @@ pub fn Canvas() -> Element {
                 let coords = evt.client_coordinates();
                 let (sx, sy) = (coords.x, coords.y);
                 state.menu_open.set(false);
+                state.close_context_menu();
 
-                let is_middle = evt.trigger_button() == Some(dioxus::html::input_data::MouseButton::Auxiliary);
+                let button = evt.trigger_button();
+                let is_primary = button == Some(dioxus::html::input_data::MouseButton::Primary);
+                let is_middle = button == Some(dioxus::html::input_data::MouseButton::Auxiliary);
+                if !is_primary && !is_middle {
+                    return;
+                }
                 if is_middle || tool == Tool::Select {
                     state.drag.set(DragState::Pan {
                         start_mouse: (sx, sy),
@@ -79,8 +92,17 @@ pub fn Canvas() -> Element {
                         state.live_points.set(vec![[wx, wy]]);
                         state.drag.set(DragState::DrawStroke);
                     }
+                    Tool::Subgraph => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        state.add_subgraph(wx, wy);
+                    }
                     Tool::Select => {}
                 }
+            },
+
+            oncontextmenu: move |evt| {
+                evt.prevent_default();
+                state.close_context_menu();
             },
 
             onmousemove: move |evt| {
@@ -102,8 +124,9 @@ pub fn Canvas() -> Element {
                     }
                     DragState::MoveObject { id, start_world, orig_pos } => {
                         let (wx, wy) = state.screen_to_world(sx, sy);
+                        let path = state.current_graph_path.read().clone();
                         let mut doc = state.doc.write();
-                        if let Some(obj) = doc.object_mut(id) {
+                        if let Some(obj) = doc.object_at_path_mut(&path, id) {
                             obj.x = orig_pos.0 + (wx - start_world.0);
                             obj.y = orig_pos.1 + (wy - start_world.1);
                         }
@@ -165,8 +188,9 @@ pub fn Canvas() -> Element {
                                 }
                             }
                         }
+                        let path = state.current_graph_path.read().clone();
                         let mut doc = state.doc.write();
-                        if let Some(obj) = doc.object_mut(id) {
+                        if let Some(obj) = doc.object_at_path_mut(&path, id) {
                             obj.x = x;
                             obj.y = y;
                             obj.w = w;
@@ -181,8 +205,9 @@ pub fn Canvas() -> Element {
                         if (rotation - snapped).abs() < 4.0 {
                             rotation = snapped;
                         }
+                        let path = state.current_graph_path.read().clone();
                         let mut doc = state.doc.write();
-                        if let Some(obj) = doc.object_mut(id) {
+                        if let Some(obj) = doc.object_at_path_mut(&path, id) {
                             obj.rotation = rotation.rem_euclid(360.0);
                         }
                     }
@@ -216,6 +241,9 @@ pub fn Canvas() -> Element {
                         }
                     }
                     DragState::DrawStroke => state.finish_stroke(),
+                    DragState::MoveObject { id, .. } => {
+                        state.try_drop_object_into_subgraph(id);
+                    }
                     _ => {}
                 }
                 state.drag.set(DragState::None);
@@ -253,16 +281,25 @@ pub fn Canvas() -> Element {
                 if !interactive {
                     return;
                 }
-                let editing = state.editing_note.read().is_some();
+                let editing_note = state.editing_note.read().is_some();
+                let editing_subgraph = state.editing_subgraph.read().is_some();
+                let editing = editing_note || editing_subgraph;
                 match evt.key() {
                     Key::Delete | Key::Backspace if !editing => {
                         state.delete_selected();
                     }
+                    Key::F2 if !editing => {
+                        state.rename_selected_subgraph();
+                    }
                     Key::Escape => {
                         if *state.shot_mode.peek() {
                             state.cancel_region_screenshot();
-                        } else if editing {
+                        } else if editing_note {
                             state.editing_note.set(None);
+                        } else if editing_subgraph {
+                            state.editing_subgraph.set(None);
+                        } else if state.context_menu.read().is_some() {
+                            state.close_context_menu();
                         } else if *state.menu_open.peek() {
                             state.menu_open.set(false);
                         } else {

@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 
 use super::{EditorState, Tool, ViewMode};
-use crate::store::{self, STROKE_COLORS};
+use crate::store::{self, ObjectKind, STROKE_COLORS};
 
 #[component]
 pub fn Toolbar() -> Element {
@@ -36,6 +36,17 @@ pub fn Toolbar() -> Element {
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M4 4 H20 V14 L14 20 H4 Z" }
                     path { d: "M14 20 V14 H20" }
+                }
+            }
+            button {
+                class: "tool-btn",
+                class: if tool == Tool::Subgraph { "active" },
+                title: "Add subgraph",
+                onclick: move |_| state.tool.set(Tool::Subgraph),
+                svg { width: "22", height: "22", view_box: "0 0 24 24", fill: "none",
+                    stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
+                    path { d: "M3 7 H9 L11 10 H21 V19 H3 Z" }
+                    path { d: "M3 7 V5 H9 L11 8 H21 V10" }
                 }
             }
             button {
@@ -86,6 +97,90 @@ pub fn Toolbar() -> Element {
                             state.stroke_width.set(v);
                         }
                     },
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn Breadcrumbs() -> Element {
+    let mut state = use_context::<EditorState>();
+    let path = state.current_graph_path.read().clone();
+    let names = state.doc.read().breadcrumb_names(&path);
+
+    rsx! {
+        div { class: "breadcrumbs",
+            button {
+                class: "crumb",
+                class: if path.is_empty() { "current" },
+                title: "Root graph",
+                onclick: move |_| state.navigate_to_graph_depth(0),
+                "Root"
+            }
+            for (i, name) in names.iter().enumerate() {
+                span { class: "crumb-sep", "/" }
+                button {
+                    class: "crumb",
+                    class: if i + 1 == path.len() { "current" },
+                    title: "{name}",
+                    onclick: move |_| state.navigate_to_graph_depth(i + 1),
+                    "{name}"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn ObjectContextMenu() -> Element {
+    let mut state = use_context::<EditorState>();
+    let Some(menu) = state.context_menu.read().clone() else {
+        return rsx! {};
+    };
+
+    let doc = state.doc.read();
+    let is_subgraph = matches!(
+        doc.object_at_path(&menu.source_path, menu.id)
+            .map(|obj| &obj.kind),
+        Some(ObjectKind::Subgraph { .. })
+    );
+    let destinations = doc.subgraph_destinations(menu.id, &menu.source_path);
+    let has_destinations = !destinations.is_empty();
+    drop(doc);
+
+    rsx! {
+        div {
+            class: "object-menu",
+            style: "left: {menu.x}px; top: {menu.y}px;",
+            onmousedown: move |evt| evt.stop_propagation(),
+            oncontextmenu: move |evt| {
+                evt.prevent_default();
+                evt.stop_propagation();
+            },
+            if is_subgraph {
+                button {
+                    class: "object-menu-item",
+                    onclick: move |_| state.rename_context_subgraph(),
+                    "Rename"
+                }
+            }
+            div {
+                class: "object-menu-item object-menu-parent",
+                class: if !has_destinations { "disabled" },
+                "Move to"
+                span { class: "object-menu-arrow", ">" }
+                if has_destinations {
+                    div { class: "object-submenu",
+                        for destination in destinations.iter().cloned() {
+                            button {
+                                class: "object-menu-item",
+                                title: "{destination.label}",
+                                onclick: move |_| state.move_context_object_to_graph(destination.path.clone()),
+                                "{destination.label}"
+                            }
+                        }
+                    }
                 }
             }
         }

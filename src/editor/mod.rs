@@ -9,7 +9,9 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::store::{self, CanvasObject, Document, ObjectKind, DEFAULT_NOTE_COLOR};
+use crate::store::{
+    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_SUBGRAPH_COLOR, Document, ObjectKind,
+};
 
 /// Where the editor is hosted.
 #[derive(Clone, Copy, PartialEq)]
@@ -31,6 +33,7 @@ pub enum Tool {
     Select,
     Note,
     Draw,
+    Subgraph,
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -72,6 +75,14 @@ pub struct PendingScreenshot {
     pub data_url: String,
 }
 
+#[derive(Clone, PartialEq)]
+pub struct ObjectContextMenu {
+    pub id: u64,
+    pub source_path: Vec<u64>,
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Clone, Copy)]
 pub struct EditorState {
     pub host: EditorHost,
@@ -84,6 +95,8 @@ pub struct EditorState {
     pub tool: Signal<Tool>,
     pub selected: Signal<Option<u64>>,
     pub editing_note: Signal<Option<u64>>,
+    pub editing_subgraph: Signal<Option<u64>>,
+    pub current_graph_path: Signal<Vec<u64>>,
     pub drag: Signal<DragState>,
     pub live_points: Signal<Vec<[f64; 2]>>,
     pub stroke_color: Signal<String>,
@@ -92,6 +105,7 @@ pub struct EditorState {
     pub shot_mode: Signal<bool>,
     pub pending_shot: Signal<Option<PendingScreenshot>>,
     pub toast: Signal<Option<String>>,
+    pub context_menu: Signal<Option<ObjectContextMenu>>,
     /// Object id -> data URL, for image objects.
     pub image_cache: Signal<HashMap<u64, String>>,
     /// Mounted handle of the canvas viewport, used to restore keyboard focus.
@@ -100,14 +114,7 @@ pub struct EditorState {
 
 impl EditorState {
     pub fn create(host: EditorHost, game_hwnd: Option<isize>, doc: Document) -> Self {
-        let mut cache = HashMap::new();
-        for obj in &doc.objects {
-            if let ObjectKind::Image { file } = &obj.kind {
-                if let Some(url) = store::image_data_url(&doc, file) {
-                    cache.insert(obj.id, url);
-                }
-            }
-        }
+        let cache = build_image_cache(&doc);
         Self {
             host,
             game_hwnd,
@@ -118,6 +125,8 @@ impl EditorState {
             tool: Signal::new(Tool::Select),
             selected: Signal::new(None),
             editing_note: Signal::new(None),
+            editing_subgraph: Signal::new(None),
+            current_graph_path: Signal::new(Vec::new()),
             drag: Signal::new(DragState::None),
             live_points: Signal::new(Vec::new()),
             stroke_color: Signal::new("#7aa2ff".to_string()),
@@ -126,6 +135,7 @@ impl EditorState {
             shot_mode: Signal::new(false),
             pending_shot: Signal::new(None),
             toast: Signal::new(None),
+            context_menu: Signal::new(None),
             image_cache: Signal::new(cache),
             viewport_mount: Signal::new(None),
         }
@@ -162,12 +172,43 @@ impl EditorState {
         if *self.editing_note.read() != Some(id) {
             self.editing_note.set(None);
         }
-        self.doc.write().raise_object(id);
+        if *self.editing_subgraph.read() != Some(id) {
+            self.editing_subgraph.set(None);
+        }
+        let path = self.current_graph_path.read().clone();
+        self.doc.write().raise_object_at_path(&path, id);
     }
 
     pub fn deselect(&mut self) {
         self.selected.set(None);
         self.editing_note.set(None);
+        self.editing_subgraph.set(None);
+    }
+
+    pub fn close_context_menu(&mut self) {
+        self.context_menu.set(None);
+    }
+
+    pub fn open_object_context_menu(&mut self, id: u64, x: f64, y: f64) {
+        let source_path = self.current_graph_path.read().clone();
+        if self
+            .doc
+            .read()
+            .object_at_path(&source_path, id)
+            .is_none()
+        {
+            return;
+        }
+        self.selected.set(Some(id));
+        self.editing_note.set(None);
+        self.editing_subgraph.set(None);
+        self.menu_open.set(false);
+        self.context_menu.set(Some(ObjectContextMenu {
+            id,
+            source_path,
+            x,
+            y,
+        }));
     }
 
     /// Enter the region screenshot flow.
@@ -214,9 +255,16 @@ impl EditorState {
     }
 
     pub fn add_note(&mut self, wx: f64, wy: f64) {
+        let path = self.current_graph_path.read().clone();
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
-        doc.objects.push(CanvasObject {
+        let Some(objects) = doc.objects_at_path_mut(&path) else {
+            drop(doc);
+            self.current_graph_path.set(Vec::new());
+            self.show_toast("Could not create note in this subgraph");
+            return;
+        };
+        objects.push(CanvasObject {
             id,
             x: wx - 100.0,
             y: wy - 70.0,
@@ -231,6 +279,37 @@ impl EditorState {
         drop(doc);
         self.selected.set(Some(id));
         self.editing_note.set(Some(id));
+        self.editing_subgraph.set(None);
+        self.tool.set(Tool::Select);
+    }
+
+    pub fn add_subgraph(&mut self, wx: f64, wy: f64) {
+        let path = self.current_graph_path.read().clone();
+        let mut doc = self.doc.write();
+        let id = doc.alloc_object_id();
+        let Some(objects) = doc.objects_at_path_mut(&path) else {
+            drop(doc);
+            self.current_graph_path.set(Vec::new());
+            self.show_toast("Could not create subgraph here");
+            return;
+        };
+        objects.push(CanvasObject {
+            id,
+            x: wx - 60.0,
+            y: wy - 45.0,
+            w: 120.0,
+            h: 110.0,
+            rotation: 0.0,
+            kind: ObjectKind::Subgraph {
+                name: "New subgraph".to_string(),
+                color: DEFAULT_SUBGRAPH_COLOR.to_string(),
+                objects: Vec::new(),
+            },
+        });
+        drop(doc);
+        self.selected.set(Some(id));
+        self.editing_note.set(None);
+        self.editing_subgraph.set(Some(id));
         self.tool.set(Tool::Select);
     }
 
@@ -256,14 +335,18 @@ impl EditorState {
         let y = min_y - pad;
         let w = (max_x - min_x) + pad * 2.0;
         let h = (max_y - min_y) + pad * 2.0;
-        let rel: Vec<[f64; 2]> = points
-            .iter()
-            .map(|p| [p[0] - x, p[1] - y])
-            .collect();
+        let rel: Vec<[f64; 2]> = points.iter().map(|p| [p[0] - x, p[1] - y]).collect();
 
+        let path = self.current_graph_path.read().clone();
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
-        doc.objects.push(CanvasObject {
+        let Some(objects) = doc.objects_at_path_mut(&path) else {
+            drop(doc);
+            self.current_graph_path.set(Vec::new());
+            self.show_toast("Could not finish drawing in this subgraph");
+            return;
+        };
+        objects.push(CanvasObject {
             id,
             x,
             y,
@@ -315,9 +398,16 @@ impl EditorState {
             )
         };
 
+        let path = self.current_graph_path.read().clone();
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
-        doc.objects.push(CanvasObject {
+        let Some(objects) = doc.objects_at_path_mut(&path) else {
+            drop(doc);
+            self.current_graph_path.set(Vec::new());
+            self.show_toast("Could not add image in this subgraph");
+            return;
+        };
+        objects.push(CanvasObject {
             id,
             x: wx - w / 2.0,
             y: wy - h / 2.0,
@@ -329,6 +419,8 @@ impl EditorState {
         drop(doc);
         self.image_cache.write().insert(id, url);
         self.selected.set(Some(id));
+        self.editing_note.set(None);
+        self.editing_subgraph.set(None);
     }
 
     /// Paste an image from the system clipboard into the canvas center.
@@ -351,10 +443,143 @@ impl EditorState {
     pub fn delete_selected(&mut self) {
         let sel = *self.selected.read();
         if let Some(id) = sel {
-            self.doc.write().remove_object(id);
-            self.image_cache.write().remove(&id);
+            let path = self.current_graph_path.read().clone();
+            if let Some(removed) = self.doc.write().remove_object_at_path(&path, id) {
+                let mut cache = self.image_cache.write();
+                for image_id in removed.image_ids_recursive() {
+                    cache.remove(&image_id);
+                }
+            }
             self.deselect();
         }
+    }
+
+    pub fn enter_subgraph(&mut self, id: u64) {
+        let path = self.current_graph_path.read().clone();
+        if !matches!(
+            self.doc.read().object_at_path(&path, id).map(|o| &o.kind),
+            Some(ObjectKind::Subgraph { .. })
+        ) {
+            return;
+        }
+        let mut next = path;
+        next.push(id);
+        self.current_graph_path.set(next);
+        self.reset_graph_view();
+    }
+
+    pub fn rename_selected_subgraph(&mut self) {
+        let Some(id) = *self.selected.read() else {
+            return;
+        };
+        let path = self.current_graph_path.read().clone();
+        if !matches!(
+            self.doc.read().object_at_path(&path, id).map(|o| &o.kind),
+            Some(ObjectKind::Subgraph { .. })
+        ) {
+            return;
+        }
+        self.editing_note.set(None);
+        self.editing_subgraph.set(Some(id));
+    }
+
+    pub fn rename_context_subgraph(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        if !matches!(
+            self.doc
+                .read()
+                .object_at_path(&menu.source_path, menu.id)
+                .map(|o| &o.kind),
+            Some(ObjectKind::Subgraph { .. })
+        ) {
+            self.close_context_menu();
+            return;
+        }
+        self.current_graph_path.set(menu.source_path.clone());
+        self.selected.set(Some(menu.id));
+        self.editing_note.set(None);
+        self.editing_subgraph.set(Some(menu.id));
+        self.close_context_menu();
+        self.focus_canvas();
+    }
+
+    pub fn move_context_object_to_graph(&mut self, target_path: Vec<u64>) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        let moved = self
+            .doc
+            .write()
+            .move_object_to_graph(&menu.source_path, menu.id, &target_path);
+        self.close_context_menu();
+        if moved {
+            if *self.selected.read() == Some(menu.id) {
+                self.deselect();
+            }
+        } else {
+            self.show_toast("Could not move object");
+        }
+    }
+
+    pub fn navigate_to_graph_depth(&mut self, depth: usize) {
+        let mut path = self.current_graph_path.read().clone();
+        path.truncate(depth);
+        self.current_graph_path.set(path);
+        self.reset_graph_view();
+    }
+
+    fn reset_graph_view(&mut self) {
+        self.deselect();
+        self.drag.set(DragState::None);
+        self.menu_open.set(false);
+        self.close_context_menu();
+        self.pan.set((0.0, 0.0));
+        self.zoom.set(1.0);
+        self.tool.set(Tool::Select);
+    }
+
+    pub fn try_drop_object_into_subgraph(&mut self, id: u64) -> bool {
+        let path = self.current_graph_path.read().clone();
+        let Some((cx, cy)) = ({
+            let doc = self.doc.read();
+            doc.object_at_path(&path, id)
+                .map(|obj| (obj.x + obj.w / 2.0, obj.y + obj.h / 2.0))
+        }) else {
+            return false;
+        };
+
+        let target_id = {
+            let doc = self.doc.read();
+            doc.objects_at_path(&path).and_then(|objects| {
+                objects
+                    .iter()
+                    .rev()
+                    .find(|obj| {
+                        obj.id != id
+                            && matches!(&obj.kind, ObjectKind::Subgraph { .. })
+                            && cx >= obj.x
+                            && cx <= obj.x + obj.w
+                            && cy >= obj.y
+                            && cy <= obj.y + obj.h
+                    })
+                    .map(|obj| obj.id)
+            })
+        };
+
+        let Some(target_id) = target_id else {
+            return false;
+        };
+        if self
+            .doc
+            .write()
+            .move_object_into_subgraph(&path, id, target_id)
+        {
+            self.deselect();
+            return true;
+        }
+        false
     }
 
     /// Switch to another document of the same game.
@@ -366,16 +591,10 @@ impl EditorState {
             self.show_toast("Could not load document");
             return;
         };
-        let mut cache = HashMap::new();
-        for obj in &new_doc.objects {
-            if let ObjectKind::Image { file } = &obj.kind {
-                if let Some(url) = store::image_data_url(&new_doc, file) {
-                    cache.insert(obj.id, url);
-                }
-            }
-        }
+        let cache = build_image_cache(&new_doc);
         self.image_cache.set(cache);
         self.doc.set(new_doc);
+        self.current_graph_path.set(Vec::new());
         self.deselect();
         self.pan.set((0.0, 0.0));
         self.zoom.set(1.0);
@@ -394,6 +613,16 @@ impl EditorState {
     }
 }
 
+fn build_image_cache(doc: &Document) -> HashMap<u64, String> {
+    let mut cache = HashMap::new();
+    for (id, file) in doc.image_objects() {
+        if let Some(url) = store::image_data_url(doc, &file) {
+            cache.insert(id, url);
+        }
+    }
+    cache
+}
+
 fn png_data_url(png_bytes: &[u8]) -> String {
     use base64::Engine;
     format!(
@@ -407,11 +636,7 @@ fn read_clipboard_png() -> Result<Vec<u8>, String> {
     let img = clipboard
         .get_image()
         .map_err(|_| "No image in clipboard".to_string())?;
-    crate::platform::capture::encode_png(
-        img.bytes.as_ref(),
-        img.width as u32,
-        img.height as u32,
-    )
+    crate::platform::capture::encode_png(img.bytes.as_ref(), img.width as u32, img.height as u32)
 }
 
 /// Approximate viewport size in CSS pixels (window inner size / scale).
@@ -472,7 +697,9 @@ pub fn Editor() -> Element {
             canvas::Canvas {}
             if edit && !shot_active {
                 chrome::Toolbar {}
+                chrome::Breadcrumbs {}
                 chrome::MainMenu {}
+                chrome::ObjectContextMenu {}
                 if state.host == EditorHost::Overlay {
                     chrome::BottomBar {}
                 }
