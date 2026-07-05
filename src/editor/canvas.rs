@@ -44,6 +44,20 @@ pub fn Canvas() -> Element {
     let live = state.live_points.read().clone();
     let live_stroke = state.stroke_color.read().clone();
     let live_width = *state.stroke_width.read();
+    let drop_target = state.drop_target.read().clone();
+    let marquee_rect = match state.drag.read().clone() {
+        DragState::BoxSelect {
+            start_screen,
+            current_screen,
+        } => {
+            let x = start_screen.0.min(current_screen.0);
+            let y = start_screen.1.min(current_screen.1);
+            let w = (start_screen.0 - current_screen.0).abs();
+            let h = (start_screen.1 - current_screen.1).abs();
+            Some((x, y, w, h))
+        }
+        _ => None,
+    };
 
     rsx! {
         div {
@@ -72,6 +86,13 @@ pub fn Canvas() -> Element {
                 let is_primary = button == Some(dioxus::html::input_data::MouseButton::Primary);
                 let is_middle = button == Some(dioxus::html::input_data::MouseButton::Auxiliary);
                 if !is_primary && !is_middle {
+                    return;
+                }
+                if tool == Tool::Select && is_primary && evt.modifiers().shift() {
+                    state.drag.set(DragState::BoxSelect {
+                        start_screen: (sx, sy),
+                        current_screen: (sx, sy),
+                    });
                     return;
                 }
                 if is_middle || tool == Tool::Select {
@@ -122,14 +143,30 @@ pub fn Canvas() -> Element {
                             state.drag.set(DragState::Pan { start_mouse, start_pan, moved: true });
                         }
                     }
-                    DragState::MoveObject { id, start_world, orig_pos } => {
+                    DragState::MoveObjects {
+                        anchor_id,
+                        start_world,
+                        orig_positions,
+                    } => {
                         let (wx, wy) = state.screen_to_world(sx, sy);
                         let path = state.current_graph_path.read().clone();
                         let mut doc = state.doc.write();
-                        if let Some(obj) = doc.object_at_path_mut(&path, id) {
-                            obj.x = orig_pos.0 + (wx - start_world.0);
-                            obj.y = orig_pos.1 + (wy - start_world.1);
+                        for (id, orig_pos) in orig_positions {
+                            if let Some(obj) = doc.object_at_path_mut(&path, id) {
+                                obj.x = orig_pos.0 + (wx - start_world.0);
+                                obj.y = orig_pos.1 + (wy - start_world.1);
+                            }
                         }
+                        drop(doc);
+                        if state.selected.read().len() == 1 {
+                            state.update_subgraph_drop_target(anchor_id, (sx, sy));
+                        }
+                    }
+                    DragState::BoxSelect { start_screen, .. } => {
+                        state.drag.set(DragState::BoxSelect {
+                            start_screen,
+                            current_screen: (sx, sy),
+                        });
                     }
                     DragState::Resize {
                         id,
@@ -241,8 +278,28 @@ pub fn Canvas() -> Element {
                         }
                     }
                     DragState::DrawStroke => state.finish_stroke(),
-                    DragState::MoveObject { id, .. } => {
-                        state.try_drop_object_into_subgraph(id);
+                    DragState::MoveObjects {
+                        anchor_id,
+                        orig_positions,
+                        ..
+                    } => {
+                        if orig_positions.len() == 1 {
+                            state.try_drop_object_into_subgraph(anchor_id);
+                        }
+                        state.drop_target.set(None);
+                    }
+                    DragState::BoxSelect {
+                        start_screen,
+                        current_screen,
+                    } => {
+                        if (start_screen.0 - current_screen.0).abs() > 3.0
+                            || (start_screen.1 - current_screen.1).abs() > 3.0
+                        {
+                            state.select_objects_in_world_rect(
+                                state.screen_to_world(start_screen.0, start_screen.1),
+                                state.screen_to_world(current_screen.0, current_screen.1),
+                            );
+                        }
                     }
                     _ => {}
                 }
@@ -253,6 +310,7 @@ pub fn Canvas() -> Element {
                 if matches!(*state.drag.peek(), DragState::DrawStroke) {
                     state.finish_stroke();
                 }
+                state.drop_target.set(None);
                 state.drag.set(DragState::None);
             },
 
@@ -337,6 +395,21 @@ pub fn Canvas() -> Element {
                             stroke_linejoin: "round",
                         }
                     }
+                }
+            }
+
+            if let Some((x, y, w, h)) = marquee_rect {
+                div {
+                    class: "marquee-rect",
+                    style: "left: {x}px; top: {y}px; width: {w}px; height: {h}px;",
+                }
+            }
+
+            if let Some(target) = drop_target {
+                div {
+                    class: "drop-label",
+                    style: "left: {target.screen_pos.0}px; top: {target.screen_pos.1}px;",
+                    "Move to {target.name}"
                 }
             }
         }

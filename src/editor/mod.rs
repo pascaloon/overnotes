@@ -45,10 +45,14 @@ pub enum DragState {
         start_pan: (f64, f64),
         moved: bool,
     },
-    MoveObject {
-        id: u64,
+    MoveObjects {
+        anchor_id: u64,
         start_world: (f64, f64),
-        orig_pos: (f64, f64),
+        orig_positions: Vec<(u64, (f64, f64))>,
+    },
+    BoxSelect {
+        start_screen: (f64, f64),
+        current_screen: (f64, f64),
     },
     Resize {
         id: u64,
@@ -83,6 +87,13 @@ pub struct ObjectContextMenu {
     pub y: f64,
 }
 
+#[derive(Clone, PartialEq)]
+pub struct SubgraphDropTarget {
+    pub id: u64,
+    pub name: String,
+    pub screen_pos: (f64, f64),
+}
+
 #[derive(Clone, Copy)]
 pub struct EditorState {
     pub host: EditorHost,
@@ -93,7 +104,7 @@ pub struct EditorState {
     pub pan: Signal<(f64, f64)>,
     pub zoom: Signal<f64>,
     pub tool: Signal<Tool>,
-    pub selected: Signal<Option<u64>>,
+    pub selected: Signal<Vec<u64>>,
     pub editing_note: Signal<Option<u64>>,
     pub editing_subgraph: Signal<Option<u64>>,
     pub current_graph_path: Signal<Vec<u64>>,
@@ -106,6 +117,7 @@ pub struct EditorState {
     pub pending_shot: Signal<Option<PendingScreenshot>>,
     pub toast: Signal<Option<String>>,
     pub context_menu: Signal<Option<ObjectContextMenu>>,
+    pub drop_target: Signal<Option<SubgraphDropTarget>>,
     /// Object id -> data URL, for image objects.
     pub image_cache: Signal<HashMap<u64, String>>,
     /// Mounted handle of the canvas viewport, used to restore keyboard focus.
@@ -124,7 +136,7 @@ impl EditorState {
             pan: Signal::new(view.pan()),
             zoom: Signal::new(view.zoom),
             tool: Signal::new(Tool::Select),
-            selected: Signal::new(None),
+            selected: Signal::new(Vec::new()),
             editing_note: Signal::new(None),
             editing_subgraph: Signal::new(None),
             current_graph_path: Signal::new(Vec::new()),
@@ -137,6 +149,7 @@ impl EditorState {
             pending_shot: Signal::new(None),
             toast: Signal::new(None),
             context_menu: Signal::new(None),
+            drop_target: Signal::new(None),
             image_cache: Signal::new(cache),
             viewport_mount: Signal::new(None),
         }
@@ -196,19 +209,36 @@ impl EditorState {
     }
 
     pub fn select_only(&mut self, id: u64) {
-        self.selected.set(Some(id));
+        self.selected.set(vec![id]);
         if *self.editing_note.read() != Some(id) {
             self.editing_note.set(None);
         }
         if *self.editing_subgraph.read() != Some(id) {
             self.editing_subgraph.set(None);
         }
-        let path = self.current_graph_path.read().clone();
-        self.doc.write().raise_object_at_path(&path, id);
+    }
+
+    pub fn set_selection(&mut self, ids: Vec<u64>) {
+        self.selected.set(ids);
+        self.editing_note.set(None);
+        self.editing_subgraph.set(None);
+    }
+
+    pub fn is_selected(&self, id: u64) -> bool {
+        self.selected.read().contains(&id)
+    }
+
+    pub fn single_selected(&self) -> Option<u64> {
+        let selected = self.selected.read();
+        if selected.len() == 1 {
+            selected.first().copied()
+        } else {
+            None
+        }
     }
 
     pub fn deselect(&mut self) {
-        self.selected.set(None);
+        self.selected.set(Vec::new());
         self.editing_note.set(None);
         self.editing_subgraph.set(None);
     }
@@ -222,7 +252,7 @@ impl EditorState {
         if self.doc.read().object_at_path(&source_path, id).is_none() {
             return;
         }
-        self.selected.set(Some(id));
+        self.selected.set(vec![id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(None);
         self.menu_open.set(false);
@@ -232,6 +262,52 @@ impl EditorState {
             x,
             y,
         }));
+    }
+
+    pub fn move_context_object_up(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        self.doc
+            .write()
+            .move_object_up_at_path(&menu.source_path, menu.id);
+        self.close_context_menu();
+    }
+
+    pub fn move_context_object_down(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        self.doc
+            .write()
+            .move_object_down_at_path(&menu.source_path, menu.id);
+        self.close_context_menu();
+    }
+
+    pub fn set_context_object_opacity(&mut self, opacity: f64) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        if let Some(obj) = self
+            .doc
+            .write()
+            .object_at_path_mut(&menu.source_path, menu.id)
+        {
+            obj.opacity_override = Some(opacity.clamp(0.1, 1.0));
+        }
+    }
+
+    pub fn reset_context_object_opacity(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        if let Some(obj) = self
+            .doc
+            .write()
+            .object_at_path_mut(&menu.source_path, menu.id)
+        {
+            obj.opacity_override = None;
+        }
     }
 
     /// Enter the region screenshot flow.
@@ -294,13 +370,14 @@ impl EditorState {
             w: 200.0,
             h: 140.0,
             rotation: 0.0,
+            opacity_override: None,
             kind: ObjectKind::Note {
                 text: String::new(),
                 color: DEFAULT_NOTE_COLOR.to_string(),
             },
         });
         drop(doc);
-        self.selected.set(Some(id));
+        self.selected.set(vec![id]);
         self.editing_note.set(Some(id));
         self.editing_subgraph.set(None);
         self.tool.set(Tool::Select);
@@ -323,6 +400,7 @@ impl EditorState {
             w: 120.0,
             h: 110.0,
             rotation: 0.0,
+            opacity_override: None,
             kind: ObjectKind::Subgraph {
                 name: "New subgraph".to_string(),
                 color: DEFAULT_SUBGRAPH_COLOR.to_string(),
@@ -331,7 +409,7 @@ impl EditorState {
             },
         });
         drop(doc);
-        self.selected.set(Some(id));
+        self.selected.set(vec![id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(Some(id));
         self.tool.set(Tool::Select);
@@ -377,6 +455,7 @@ impl EditorState {
             w,
             h,
             rotation: 0.0,
+            opacity_override: None,
             kind: ObjectKind::Drawing {
                 points: rel,
                 vw: w,
@@ -438,11 +517,12 @@ impl EditorState {
             w,
             h,
             rotation: 0.0,
+            opacity_override: None,
             kind: ObjectKind::Image { file },
         });
         drop(doc);
         self.image_cache.write().insert(id, url);
-        self.selected.set(Some(id));
+        self.selected.set(vec![id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(None);
     }
@@ -465,13 +545,24 @@ impl EditorState {
     }
 
     pub fn delete_selected(&mut self) {
-        let sel = *self.selected.read();
-        if let Some(id) = sel {
+        let selected = self.selected.read().clone();
+        if !selected.is_empty() {
             let path = self.current_graph_path.read().clone();
-            if let Some(removed) = self.doc.write().remove_object_at_path(&path, id) {
+            let mut removed_objects = Vec::new();
+            {
+                let mut doc = self.doc.write();
+                for id in selected {
+                    if let Some(removed) = doc.remove_object_at_path(&path, id) {
+                        removed_objects.push(removed);
+                    }
+                }
+            }
+            if !removed_objects.is_empty() {
                 let mut cache = self.image_cache.write();
-                for image_id in removed.image_ids_recursive() {
-                    cache.remove(&image_id);
+                for removed in removed_objects {
+                    for image_id in removed.image_ids_recursive() {
+                        cache.remove(&image_id);
+                    }
                 }
             }
             self.deselect();
@@ -494,7 +585,7 @@ impl EditorState {
     }
 
     pub fn rename_selected_subgraph(&mut self) {
-        let Some(id) = *self.selected.read() else {
+        let Some(id) = self.single_selected() else {
             return;
         };
         let path = self.current_graph_path.read().clone();
@@ -525,7 +616,7 @@ impl EditorState {
         self.persist_current_graph_view();
         self.current_graph_path.set(menu.source_path.clone());
         self.load_current_graph_view();
-        self.selected.set(Some(menu.id));
+        self.selected.set(vec![menu.id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(Some(menu.id));
         self.close_context_menu();
@@ -542,7 +633,7 @@ impl EditorState {
             .move_object_to_graph(&menu.source_path, menu.id, &target_path);
         self.close_context_menu();
         if moved {
-            if *self.selected.read() == Some(menu.id) {
+            if self.selected.read().contains(&menu.id) {
                 self.deselect();
             }
         } else {
@@ -561,39 +652,84 @@ impl EditorState {
     fn restore_graph_view(&mut self) {
         self.deselect();
         self.drag.set(DragState::None);
+        self.drop_target.set(None);
         self.menu_open.set(false);
         self.close_context_menu();
         self.load_current_graph_view();
         self.tool.set(Tool::Select);
     }
 
+    pub fn select_objects_in_world_rect(&mut self, a: (f64, f64), b: (f64, f64)) {
+        let left = a.0.min(b.0);
+        let right = a.0.max(b.0);
+        let top = a.1.min(b.1);
+        let bottom = a.1.max(b.1);
+        let path = self.current_graph_path.read().clone();
+        let ids = {
+            let doc = self.doc.read();
+            doc.objects_at_path(&path)
+                .map(|objects| {
+                    objects
+                        .iter()
+                        .filter(|obj| {
+                            let obj_right = obj.x + obj.w;
+                            let obj_bottom = obj.y + obj.h;
+                            obj.x <= right
+                                && obj_right >= left
+                                && obj.y <= bottom
+                                && obj_bottom >= top
+                        })
+                        .map(|obj| obj.id)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        self.set_selection(ids);
+    }
+
+    pub fn update_subgraph_drop_target(&mut self, id: u64, screen_pos: (f64, f64)) {
+        let path = self.current_graph_path.read().clone();
+        let target = self
+            .find_subgraph_drop_target(&path, id)
+            .map(|mut target| {
+                target.screen_pos = screen_pos;
+                target
+            });
+        self.drop_target.set(target);
+    }
+
+    fn find_subgraph_drop_target(&self, path: &[u64], id: u64) -> Option<SubgraphDropTarget> {
+        let doc = self.doc.read();
+        let obj = doc.object_at_path(path, id)?;
+        let (cx, cy) = (obj.x + obj.w / 2.0, obj.y + obj.h / 2.0);
+        doc.objects_at_path(path).and_then(|objects| {
+            objects.iter().rev().find_map(|candidate| {
+                if candidate.id == id
+                    || cx < candidate.x
+                    || cx > candidate.x + candidate.w
+                    || cy < candidate.y
+                    || cy > candidate.y + candidate.h
+                {
+                    return None;
+                }
+                    if let ObjectKind::Subgraph { name, .. } = &candidate.kind {
+                        Some(SubgraphDropTarget {
+                            id: candidate.id,
+                            name: name.clone(),
+                            screen_pos: (0.0, 0.0),
+                        })
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     pub fn try_drop_object_into_subgraph(&mut self, id: u64) -> bool {
         let path = self.current_graph_path.read().clone();
-        let Some((cx, cy)) = ({
-            let doc = self.doc.read();
-            doc.object_at_path(&path, id)
-                .map(|obj| (obj.x + obj.w / 2.0, obj.y + obj.h / 2.0))
-        }) else {
-            return false;
-        };
-
-        let target_id = {
-            let doc = self.doc.read();
-            doc.objects_at_path(&path).and_then(|objects| {
-                objects
-                    .iter()
-                    .rev()
-                    .find(|obj| {
-                        obj.id != id
-                            && matches!(&obj.kind, ObjectKind::Subgraph { .. })
-                            && cx >= obj.x
-                            && cx <= obj.x + obj.w
-                            && cy >= obj.y
-                            && cy <= obj.y + obj.h
-                    })
-                    .map(|obj| obj.id)
-            })
-        };
+        let target_id = self
+            .find_subgraph_drop_target(&path, id)
+            .map(|target| target.id);
 
         let Some(target_id) = target_id else {
             return false;
@@ -705,7 +841,7 @@ pub fn Editor() -> Element {
             } else if edit {
                 d.edit_opacity
             } else {
-                d.overview_opacity
+                1.0
             }
         }
     };

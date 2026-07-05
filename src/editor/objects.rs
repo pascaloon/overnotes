@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 
 use super::canvas::{editor_interactive, points_attr};
-use super::{DragState, EditorState, Tool};
+use super::{DragState, EditorHost, EditorState, Tool, ViewMode};
 use crate::store::{NOTE_COLORS, ObjectKind, SUBGRAPH_COLORS};
 
 const RESIZE_DIRS: [(&str, f64, f64, &str); 8] = [
@@ -28,16 +28,34 @@ pub fn ObjectView(id: u64) -> Element {
         return rsx! {};
     };
     let (x, y, w, h, rotation) = (obj.x, obj.y, obj.w, obj.h, obj.rotation);
+    let opacity_override = obj.opacity_override;
     let kind = obj.kind.clone();
     let is_image = matches!(kind, ObjectKind::Image { .. });
+    let overview_opacity = doc.overview_opacity;
     drop(doc);
 
     let interactive = editor_interactive(&state);
-    let selected = interactive && *state.selected.read() == Some(id);
+    let selected = interactive && state.is_selected(id);
+    let single_selected = interactive && state.single_selected() == Some(id);
     let editing = *state.editing_note.read() == Some(id);
     let editing_subgraph = *state.editing_subgraph.read() == Some(id);
     let tool = *state.tool.read();
     let zoom = *state.zoom.read();
+    let previewing_opacity = state
+        .context_menu
+        .read()
+        .as_ref()
+        .is_some_and(|menu| menu.id == id && menu.source_path == graph_path);
+    let object_opacity = if (state.host == EditorHost::Overlay
+        && *state.mode.read() == ViewMode::Overview)
+        || previewing_opacity
+    {
+        opacity_override.unwrap_or(overview_opacity)
+    } else {
+        1.0
+    };
+    let drop_target = state.drop_target.read().clone();
+    let is_drop_target = drop_target.as_ref().is_some_and(|target| target.id == id);
 
     let on_body_down = move |evt: Event<MouseData>| {
         if !interactive || tool != Tool::Select {
@@ -53,20 +71,33 @@ pub fn ObjectView(id: u64) -> Element {
             // Editing this note's text: let the textarea take the event.
             return;
         }
-        state.select_only(id);
+        let already_selected = state.is_selected(id);
+        if !already_selected {
+            state.select_only(id);
+        }
         state.focus_canvas();
         let coords = evt.client_coordinates();
         let start_world = state.screen_to_world(coords.x, coords.y);
-        let orig_pos = {
+        let orig_positions = {
             let doc = state.doc.peek();
             let path = state.current_graph_path.peek().clone();
-            let o = doc.object_at_path(&path, id).unwrap();
-            (o.x, o.y)
+            let moving_ids = if already_selected {
+                state.selected.peek().clone()
+            } else {
+                vec![id]
+            };
+            moving_ids
+                .into_iter()
+                .filter_map(|moving_id| {
+                    doc.object_at_path(&path, moving_id)
+                        .map(|o| (moving_id, (o.x, o.y)))
+                })
+                .collect::<Vec<_>>()
         };
-        state.drag.set(DragState::MoveObject {
-            id,
+        state.drag.set(DragState::MoveObjects {
+            anchor_id: id,
             start_world,
-            orig_pos,
+            orig_positions,
         });
     };
 
@@ -76,7 +107,8 @@ pub fn ObjectView(id: u64) -> Element {
     rsx! {
         div {
             class: "obj",
-            style: "left: {x}px; top: {y}px; width: {w}px; height: {h}px; transform: rotate({rotation}deg);",
+            class: if is_drop_target { "drop-target" },
+            style: "left: {x}px; top: {y}px; width: {w}px; height: {h}px; transform: rotate({rotation}deg); opacity: {object_opacity};",
             onmousedown: on_body_down,
             oncontextmenu: move |evt| {
                 if !interactive || tool != Tool::Select {
@@ -100,7 +132,7 @@ pub fn ObjectView(id: u64) -> Element {
                         .map(|o| &o.kind),
                     Some(ObjectKind::Note { .. })
                 ) {
-                    state.selected.set(Some(id));
+                    state.select_only(id);
                     state.editing_note.set(Some(id));
                     state.editing_subgraph.set(None);
                 } else if matches!(
@@ -234,7 +266,7 @@ pub fn ObjectView(id: u64) -> Element {
                                 title: "Double-click to rename",
                                 ondoubleclick: move |evt| {
                                     evt.stop_propagation();
-                                    state.selected.set(Some(id));
+                                    state.select_only(id);
                                     state.editing_note.set(None);
                                     state.editing_subgraph.set(Some(id));
                                 },
@@ -248,7 +280,7 @@ pub fn ObjectView(id: u64) -> Element {
             if selected {
                 div { class: "sel-frame" }
 
-                if !editing {
+                if single_selected && !editing {
                     // Resize handles.
                     for (dir, fx, fy, cursor) in RESIZE_DIRS {
                         div {

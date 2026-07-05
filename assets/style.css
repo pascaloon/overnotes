@@ -320,6 +320,15 @@ input[type="range"] {
   transform-origin: 0 0;
 }
 
+.marquee-rect {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: rgba(122, 162, 255, 0.16);
+  box-shadow: 0 0 0 1px rgba(8, 10, 14, 0.5);
+  pointer-events: none;
+  z-index: 30;
+}
+
 /* dotted background grid for standalone + edit mode */
 .editor-root.standalone .viewport {
   background-image: radial-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
@@ -331,6 +340,36 @@ input[type="range"] {
 .obj {
   position: absolute;
   transform-origin: center center;
+}
+
+.obj.drop-target::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  background: rgba(122, 162, 255, 0.12);
+  box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.12);
+  pointer-events: none;
+}
+
+.drop-label {
+  position: absolute;
+  transform: translate(16px, -50%);
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 6px 10px;
+  border: 1px solid rgba(122, 162, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(14, 16, 20, 0.92);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 65;
 }
 
 .sel-frame {
@@ -618,6 +657,58 @@ input[type="text"].subgraph-name-input {
 .object-menu-item:hover,
 .object-menu-parent:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.object-menu-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
+.object-menu-control {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 6px 8px 8px;
+}
+
+.object-menu-control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.object-menu-slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.object-menu-slider-row input[type="range"] {
+  min-width: 0;
+}
+
+.object-menu-reset-icon {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.object-menu-reset-icon:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
 }
 
 .object-menu-parent {

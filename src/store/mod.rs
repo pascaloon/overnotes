@@ -70,6 +70,9 @@ pub struct CanvasObject {
     pub h: f64,
     /// Rotation in degrees, applied around the object's center.
     pub rotation: f64,
+    /// Per-object override for overview opacity. `None` follows the document setting.
+    #[serde(default)]
+    pub opacity_override: Option<f64>,
     pub kind: ObjectKind,
 }
 
@@ -217,15 +220,32 @@ impl Document {
         Some(objects.remove(pos))
     }
 
-    /// Move an object to the end of the list so it renders on top.
-    pub fn raise_object_at_path(&mut self, path: &[u64], id: u64) {
+    pub fn move_object_up_at_path(&mut self, path: &[u64], id: u64) -> bool {
         let Some(objects) = self.objects_at_path_mut(path) else {
-            return;
+            return false;
         };
-        if let Some(pos) = objects.iter().position(|o| o.id == id) {
-            let obj = objects.remove(pos);
-            objects.push(obj);
+        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+            return false;
+        };
+        if pos + 1 >= objects.len() {
+            return false;
         }
+        objects.swap(pos, pos + 1);
+        true
+    }
+
+    pub fn move_object_down_at_path(&mut self, path: &[u64], id: u64) -> bool {
+        let Some(objects) = self.objects_at_path_mut(path) else {
+            return false;
+        };
+        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+            return false;
+        };
+        if pos == 0 {
+            return false;
+        }
+        objects.swap(pos, pos - 1);
+        true
     }
 
     pub fn move_object_into_subgraph(&mut self, path: &[u64], id: u64, target_id: u64) -> bool {

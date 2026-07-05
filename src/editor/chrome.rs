@@ -140,11 +140,15 @@ pub fn ObjectContextMenu() -> Element {
     };
 
     let doc = state.doc.read();
-    let is_subgraph = matches!(
-        doc.object_at_path(&menu.source_path, menu.id)
-            .map(|obj| &obj.kind),
-        Some(ObjectKind::Subgraph { .. })
-    );
+    let obj = doc.object_at_path(&menu.source_path, menu.id);
+    let is_subgraph = matches!(obj.map(|obj| &obj.kind), Some(ObjectKind::Subgraph { .. }));
+    let overview_opacity = doc.overview_opacity;
+    let object_opacity = obj
+        .and_then(|obj| obj.opacity_override)
+        .unwrap_or(overview_opacity);
+    let uses_default_opacity = obj
+        .map(|obj| obj.opacity_override.is_none())
+        .unwrap_or(true);
     let destinations = doc.subgraph_destinations(menu.id, &menu.source_path);
     let has_destinations = !destinations.is_empty();
     drop(doc);
@@ -165,6 +169,57 @@ pub fn ObjectContextMenu() -> Element {
                     "Rename"
                 }
             }
+            button {
+                class: "object-menu-item",
+                onclick: move |_| state.move_context_object_up(),
+                "Move up"
+            }
+            button {
+                class: "object-menu-item",
+                onclick: move |_| state.move_context_object_down(),
+                "Move down"
+            }
+            div { class: "object-menu-divider" }
+            div { class: "object-menu-control",
+                div { class: "object-menu-control-head",
+                    span { "Transparency" }
+                    span { class: "slider-value", "{(object_opacity * 100.0):.0}%" }
+                }
+                div { class: "object-menu-slider-row",
+                    input {
+                        r#type: "range",
+                        min: "0.1",
+                        max: "1",
+                        step: "0.05",
+                        value: "{object_opacity}",
+                        oninput: move |evt| {
+                            if let Ok(v) = evt.value().parse::<f64>() {
+                                state.set_context_object_opacity(v);
+                            }
+                        },
+                    }
+                    if !uses_default_opacity {
+                        button {
+                            class: "object-menu-reset-icon",
+                            title: "Reset to overview transparency",
+                            onclick: move |_| state.reset_context_object_opacity(),
+                            svg {
+                                width: "16",
+                                height: "16",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M3 12 A9 9 0 1 0 6 5.3" }
+                                path { d: "M3 4 V10 H9" }
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "object-menu-divider" }
             div {
                 class: "object-menu-item object-menu-parent",
                 class: if !has_destinations { "disabled" },
