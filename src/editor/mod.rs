@@ -274,6 +274,16 @@ impl EditorState {
         self.close_context_menu();
     }
 
+    pub fn move_context_object_to_top(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        self.doc
+            .write()
+            .move_object_to_top_at_path(&menu.source_path, menu.id);
+        self.close_context_menu();
+    }
+
     pub fn move_context_object_down(&mut self) {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
@@ -281,6 +291,16 @@ impl EditorState {
         self.doc
             .write()
             .move_object_down_at_path(&menu.source_path, menu.id);
+        self.close_context_menu();
+    }
+
+    pub fn move_context_object_to_bottom(&mut self) {
+        let Some(menu) = self.context_menu.read().clone() else {
+            return;
+        };
+        self.doc
+            .write()
+            .move_object_to_bottom_at_path(&menu.source_path, menu.id);
         self.close_context_menu();
     }
 
@@ -293,7 +313,7 @@ impl EditorState {
             .write()
             .object_at_path_mut(&menu.source_path, menu.id)
         {
-            obj.opacity_override = Some(opacity.clamp(0.1, 1.0));
+            obj.opacity_override = Some(opacity.clamp(0.0, 1.0));
         }
     }
 

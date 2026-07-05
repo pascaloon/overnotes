@@ -234,6 +234,21 @@ impl Document {
         true
     }
 
+    pub fn move_object_to_top_at_path(&mut self, path: &[u64], id: u64) -> bool {
+        let Some(objects) = self.objects_at_path_mut(path) else {
+            return false;
+        };
+        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+            return false;
+        };
+        if pos + 1 >= objects.len() {
+            return false;
+        }
+        let obj = objects.remove(pos);
+        objects.push(obj);
+        true
+    }
+
     pub fn move_object_down_at_path(&mut self, path: &[u64], id: u64) -> bool {
         let Some(objects) = self.objects_at_path_mut(path) else {
             return false;
@@ -245,6 +260,21 @@ impl Document {
             return false;
         }
         objects.swap(pos, pos - 1);
+        true
+    }
+
+    pub fn move_object_to_bottom_at_path(&mut self, path: &[u64], id: u64) -> bool {
+        let Some(objects) = self.objects_at_path_mut(path) else {
+            return false;
+        };
+        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+            return false;
+        };
+        if pos == 0 {
+            return false;
+        }
+        let obj = objects.remove(pos);
+        objects.insert(0, obj);
         true
     }
 
@@ -333,6 +363,12 @@ impl Document {
         source_path: &[u64],
     ) -> Vec<SubgraphDestination> {
         let mut out = Vec::new();
+        if !source_path.is_empty() {
+            out.push(SubgraphDestination {
+                path: Vec::new(),
+                label: "Root".to_string(),
+            });
+        }
         collect_subgraph_destinations(
             &self.objects,
             &mut Vec::new(),

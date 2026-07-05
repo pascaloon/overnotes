@@ -169,15 +169,77 @@ pub fn ObjectContextMenu() -> Element {
                     "Rename"
                 }
             }
-            button {
-                class: "object-menu-item",
-                onclick: move |_| state.move_context_object_up(),
-                "Move up"
-            }
-            button {
-                class: "object-menu-item",
-                onclick: move |_| state.move_context_object_down(),
-                "Move down"
+            div { class: "object-menu-order-row",
+                button {
+                    class: "object-menu-icon-btn",
+                    title: "Move to top",
+                    onclick: move |_| state.move_context_object_to_top(),
+                    svg {
+                        width: "16",
+                        height: "16",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M6 5 H18" }
+                        path { d: "M12 19 V9" }
+                        path { d: "M7 14 L12 9 L17 14" }
+                    }
+                }
+                button {
+                    class: "object-menu-icon-btn",
+                    title: "Move up",
+                    onclick: move |_| state.move_context_object_up(),
+                    svg {
+                        width: "16",
+                        height: "16",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M12 19 V5" }
+                        path { d: "M7 10 L12 5 L17 10" }
+                    }
+                }
+                button {
+                    class: "object-menu-icon-btn",
+                    title: "Move down",
+                    onclick: move |_| state.move_context_object_down(),
+                    svg {
+                        width: "16",
+                        height: "16",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M12 5 V19" }
+                        path { d: "M7 14 L12 19 L17 14" }
+                    }
+                }
+                button {
+                    class: "object-menu-icon-btn",
+                    title: "Move to bottom",
+                    onclick: move |_| state.move_context_object_to_bottom(),
+                    svg {
+                        width: "16",
+                        height: "16",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M6 19 H18" }
+                        path { d: "M12 5 V15" }
+                        path { d: "M7 10 L12 15 L17 10" }
+                    }
+                }
             }
             div { class: "object-menu-divider" }
             div { class: "object-menu-control",
@@ -188,7 +250,7 @@ pub fn ObjectContextMenu() -> Element {
                 div { class: "object-menu-slider-row",
                     input {
                         r#type: "range",
-                        min: "0.1",
+                        min: "0",
                         max: "1",
                         step: "0.05",
                         value: "{object_opacity}",
