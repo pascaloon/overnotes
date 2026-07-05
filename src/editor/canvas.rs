@@ -2,9 +2,9 @@
 
 use dioxus::prelude::*;
 
-use super::objects::ObjectView;
+use super::objects::{ObjectView, NOTE_FONT_SIZE_MAX, NOTE_FONT_SIZE_MIN};
 use super::{DragState, EditorState, Tool, ViewMode};
-use crate::store::CanvasObject;
+use crate::store::{CanvasObject, ObjectKind};
 
 const MIN_ZOOM: f64 = 0.2;
 const MAX_ZOOM: f64 = 4.0;
@@ -303,6 +303,17 @@ pub fn Canvas() -> Element {
                         let mut doc = state.doc.write();
                         if let Some(obj) = doc.object_at_path_mut(&path, id) {
                             obj.rotation = rotation.rem_euclid(360.0);
+                        }
+                    }
+                    DragState::NoteFontSize { id, start_mouse_x, orig_font_size } => {
+                        let next_size = (orig_font_size + (sx - start_mouse_x) * 0.5)
+                            .clamp(NOTE_FONT_SIZE_MIN, NOTE_FONT_SIZE_MAX);
+                        let path = state.current_graph_path.read().clone();
+                        let mut doc = state.doc.write();
+                        if let Some(obj) = doc.object_at_path_mut(&path, id) {
+                            if let ObjectKind::Note { font_size, .. } = &mut obj.kind {
+                                *font_size = next_size;
+                            }
                         }
                     }
                     DragState::DrawStroke => {

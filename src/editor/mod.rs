@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 
 use crate::store::{
-    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_SUBGRAPH_COLOR, Document, GraphView, ObjectKind,
+    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, DEFAULT_SUBGRAPH_COLOR,
+    Document, GraphView, ObjectKind,
 };
 
 /// Where the editor is hosted.
@@ -74,6 +75,11 @@ pub enum DragState {
         center_screen: (f64, f64),
         start_angle: f64,
         orig_rotation: f64,
+    },
+    NoteFontSize {
+        id: u64,
+        start_mouse_x: f64,
+        orig_font_size: f64,
     },
     DrawStroke,
 }
@@ -401,6 +407,7 @@ impl EditorState {
             kind: ObjectKind::Note {
                 text: String::new(),
                 color: DEFAULT_NOTE_COLOR.to_string(),
+                font_size: DEFAULT_NOTE_FONT_SIZE,
             },
         });
         drop(doc);

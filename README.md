@@ -56,8 +56,8 @@ cargo build
 cargo run
 
 # Direct launches
-cargo run -- --window <game-exe>                 # standalone editor
-cargo run -- --overlay <title-substring-or-hwnd> # overlay onto a running window
+cargo run -- --window <game-exe> [--doc <doc-id-or-name>]                 # standalone editor
+cargo run -- --overlay <title-substring-or-hwnd> [--doc <doc-id-or-name>] # overlay onto a running window
 
 # Test target: a fake game window (animated scene, logs input to its title)
 cargo run --bin dummy_game

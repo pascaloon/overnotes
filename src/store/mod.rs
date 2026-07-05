@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_NOTE_COLOR: &str = "#e8c95c";
+pub const DEFAULT_NOTE_FONT_SIZE: f64 = 15.0;
 pub const DEFAULT_SUBGRAPH_COLOR: &str = "#d8a84d";
-pub const NOTE_COLORS: [&str; 4] = ["#e8c95c", "#8fd18a", "#8db8f2", "#eb9bb9"];
+pub const NOTE_COLORS: [&str; 5] = ["#e8c95c", "#8fd18a", "#8db8f2", "#eb9bb9", "transparent"];
 pub const SUBGRAPH_COLORS: [&str; 5] = ["#d8a84d", "#7aa2ff", "#7fd48a", "#c792ea", "#ff8a65"];
 pub const STROKE_COLORS: [&str; 6] = [
     "#ffffff", "#7aa2ff", "#ff6b6b", "#7fd48a", "#ffd166", "#c792ea",
@@ -82,6 +83,8 @@ pub enum ObjectKind {
     Note {
         text: String,
         color: String,
+        #[serde(default = "default_note_font_size")]
+        font_size: f64,
     },
     Drawing {
         /// Points in the drawing's own coordinate space (`0..vw`, `0..vh`).
@@ -104,6 +107,10 @@ pub enum ObjectKind {
         #[serde(default)]
         objects: Vec<CanvasObject>,
     },
+}
+
+fn default_note_font_size() -> f64 {
+    DEFAULT_NOTE_FONT_SIZE
 }
 
 #[derive(Clone, PartialEq, Debug)]
