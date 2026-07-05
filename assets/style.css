@@ -402,6 +402,25 @@ input[type="range"] {
   border-radius: 4px;
 }
 
+.group-selection {
+  position: absolute;
+  pointer-events: none;
+  z-index: 45;
+}
+
+.group-frame {
+  position: absolute;
+  inset: -2px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 5px;
+  background: rgba(122, 162, 255, 0.06);
+  pointer-events: none;
+}
+
+.group-h {
+  pointer-events: auto;
+}
+
 .note-body {
   width: 100%;
   height: 100%;
@@ -570,6 +589,59 @@ input[type="text"].subgraph-name-input {
 .tool-btn.active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.has-tooltip {
+  position: relative;
+}
+
+.has-tooltip::after {
+  content: attr(aria-label);
+  position: absolute;
+  z-index: 120;
+  max-width: 260px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(14, 16, 20, 0.96);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.has-tooltip:hover::after {
+  opacity: 1;
+}
+
+.toolbar .has-tooltip::after,
+.hamburger.has-tooltip::after {
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.object-menu .has-tooltip::after,
+.bottombar .has-tooltip::after {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.object-menu-reset-icon.has-tooltip::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.icon-btn.has-tooltip::after {
+  right: 0;
+  bottom: calc(100% + 8px);
 }
 
 .draw-opts {

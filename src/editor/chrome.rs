@@ -19,8 +19,9 @@ pub fn Toolbar() -> Element {
         div { class: "toolbar",
             button {
                 class: "tool-btn",
+                class: "has-tooltip",
                 class: if tool == Tool::Select { "active" },
-                title: "Select / move (Esc)",
+                aria_label: "Select / move (Esc)",
                 onclick: move |_| state.tool.set(Tool::Select),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -29,8 +30,9 @@ pub fn Toolbar() -> Element {
             }
             button {
                 class: "tool-btn",
+                class: "has-tooltip",
                 class: if tool == Tool::Note { "active" },
-                title: "Add note",
+                aria_label: "Add note",
                 onclick: move |_| state.tool.set(Tool::Note),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -40,8 +42,9 @@ pub fn Toolbar() -> Element {
             }
             button {
                 class: "tool-btn",
+                class: "has-tooltip",
                 class: if tool == Tool::Subgraph { "active" },
-                title: "Add subgraph",
+                aria_label: "Add subgraph",
                 onclick: move |_| state.tool.set(Tool::Subgraph),
                 svg { width: "22", height: "22", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -51,8 +54,9 @@ pub fn Toolbar() -> Element {
             }
             button {
                 class: "tool-btn",
+                class: "has-tooltip",
                 class: if draw_active { "active" },
-                title: "Draw",
+                aria_label: "Draw",
                 onclick: move |_| state.tool.set(Tool::Draw),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -61,7 +65,8 @@ pub fn Toolbar() -> Element {
             }
             button {
                 class: "tool-btn",
-                title: "Paste image from clipboard (Ctrl+V)",
+                class: "has-tooltip",
+                aria_label: "Paste image from clipboard (Ctrl+V)",
                 onclick: move |_| state.paste_image_from_clipboard(),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
@@ -114,7 +119,7 @@ pub fn Breadcrumbs() -> Element {
             button {
                 class: "crumb",
                 class: if path.is_empty() { "current" },
-                title: "Root graph",
+                aria_label: "Root graph",
                 onclick: move |_| state.navigate_to_graph_depth(0),
                 "Root"
             }
@@ -123,7 +128,7 @@ pub fn Breadcrumbs() -> Element {
                 button {
                     class: "crumb",
                     class: if i + 1 == path.len() { "current" },
-                    title: "{name}",
+                    aria_label: "{name}",
                     onclick: move |_| state.navigate_to_graph_depth(i + 1),
                     "{name}"
                 }
@@ -172,7 +177,8 @@ pub fn ObjectContextMenu() -> Element {
             div { class: "object-menu-order-row",
                 button {
                     class: "object-menu-icon-btn",
-                    title: "Move to top",
+                    class: "has-tooltip",
+                    aria_label: "Move to top",
                     onclick: move |_| state.move_context_object_to_top(),
                     svg {
                         width: "16",
@@ -190,7 +196,8 @@ pub fn ObjectContextMenu() -> Element {
                 }
                 button {
                     class: "object-menu-icon-btn",
-                    title: "Move up",
+                    class: "has-tooltip",
+                    aria_label: "Move up",
                     onclick: move |_| state.move_context_object_up(),
                     svg {
                         width: "16",
@@ -207,7 +214,8 @@ pub fn ObjectContextMenu() -> Element {
                 }
                 button {
                     class: "object-menu-icon-btn",
-                    title: "Move down",
+                    class: "has-tooltip",
+                    aria_label: "Move down",
                     onclick: move |_| state.move_context_object_down(),
                     svg {
                         width: "16",
@@ -224,7 +232,8 @@ pub fn ObjectContextMenu() -> Element {
                 }
                 button {
                     class: "object-menu-icon-btn",
-                    title: "Move to bottom",
+                    class: "has-tooltip",
+                    aria_label: "Move to bottom",
                     onclick: move |_| state.move_context_object_to_bottom(),
                     svg {
                         width: "16",
@@ -263,7 +272,8 @@ pub fn ObjectContextMenu() -> Element {
                     if !uses_default_opacity {
                         button {
                             class: "object-menu-reset-icon",
-                            title: "Reset to overview transparency",
+                            class: "has-tooltip",
+                            aria_label: "Reset to overview transparency",
                             onclick: move |_| state.reset_context_object_opacity(),
                             svg {
                                 width: "16",
@@ -292,7 +302,7 @@ pub fn ObjectContextMenu() -> Element {
                         for destination in destinations.iter().cloned() {
                             button {
                                 class: "object-menu-item",
-                                title: "{destination.label}",
+                                aria_label: "{destination.label}",
                                 onclick: move |_| state.move_context_object_to_graph(destination.path.clone()),
                                 "{destination.label}"
                             }
@@ -324,7 +334,8 @@ pub fn MainMenu() -> Element {
     rsx! {
         button {
             class: "hamburger",
-            title: "Menu",
+            class: "has-tooltip",
+            aria_label: "Menu",
             onclick: move |_| {
                 let now = *state.menu_open.peek();
                 state.menu_open.set(!now);
@@ -413,7 +424,8 @@ pub fn BottomBar() -> Element {
         div { class: "bottombar",
             button {
                 class: "bar-btn",
-                title: "Capture the game, then crop it (Ctrl+Shift+S)",
+                class: "has-tooltip",
+                aria_label: "Capture the game, then crop it (Ctrl+Shift+S)",
                 onclick: move |_| {
                     state.start_region_screenshot();
                 },
@@ -427,7 +439,8 @@ pub fn BottomBar() -> Element {
             div { class: "divider" }
             button {
                 class: "bar-btn danger",
-                title: "Back to overview (Ctrl+Shift+E)",
+                class: "has-tooltip",
+                aria_label: "Back to overview (Ctrl+Shift+E)",
                 onclick: move |_| {
                     state.deselect();
                     state.menu_open.set(false);

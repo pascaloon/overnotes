@@ -4,11 +4,22 @@ use dioxus::prelude::*;
 
 use super::objects::ObjectView;
 use super::{DragState, EditorState, Tool, ViewMode};
+use crate::store::CanvasObject;
 
 const MIN_ZOOM: f64 = 0.2;
 const MAX_ZOOM: f64 = 4.0;
 const MIN_W: f64 = 40.0;
 const MIN_H: f64 = 30.0;
+const GROUP_RESIZE_DIRS: [(&str, f64, f64, &str); 8] = [
+    ("nw", 0.0, 0.0, "nwse-resize"),
+    ("n", 0.5, 0.0, "ns-resize"),
+    ("ne", 1.0, 0.0, "nesw-resize"),
+    ("e", 1.0, 0.5, "ew-resize"),
+    ("se", 1.0, 1.0, "nwse-resize"),
+    ("s", 0.5, 1.0, "ns-resize"),
+    ("sw", 0.0, 1.0, "nesw-resize"),
+    ("w", 0.0, 0.5, "ew-resize"),
+];
 
 /// Rotate a vector by `-angle_deg` (world -> object-local space).
 fn to_local(dx: f64, dy: f64, angle_deg: f64) -> (f64, f64) {
@@ -34,16 +45,27 @@ pub fn Canvas() -> Element {
     let panning = matches!(*state.drag.read(), DragState::Pan { .. });
 
     let graph_path = state.current_graph_path.read().clone();
+    let selected_ids = state.selected.read().clone();
     let object_ids: Vec<u64> = state
         .doc
         .read()
         .objects_at_path(&graph_path)
         .map(|objects| objects.iter().map(|o| o.id).collect())
         .unwrap_or_default();
+    let group_bounds = if selected_ids.len() > 1 {
+        state
+            .doc
+            .read()
+            .objects_at_path(&graph_path)
+            .and_then(|objects| selection_bounds(objects, &selected_ids))
+    } else {
+        None
+    };
 
     let live = state.live_points.read().clone();
     let live_stroke = state.stroke_color.read().clone();
     let live_width = *state.stroke_width.read();
+    let group_handle_size = 10.0 / zoom;
     let drop_target = state.drop_target.read().clone();
     let marquee_rect = match state.drag.read().clone() {
         DragState::BoxSelect {
@@ -236,6 +258,39 @@ pub fn Canvas() -> Element {
                             obj.h = h;
                         }
                     }
+                    DragState::ResizeSelection {
+                        dir,
+                        start_world,
+                        orig_bounds,
+                        orig_objects,
+                        aspect_ratio,
+                    } => {
+                        let (wx, wy) = state.screen_to_world(sx, sy);
+                        let keep_ratio = if evt.modifiers().shift() { aspect_ratio } else { None };
+                        let (x, y, w, h) = resized_bounds(
+                            dir,
+                            wx - start_world.0,
+                            wy - start_world.1,
+                            orig_bounds,
+                            keep_ratio,
+                        );
+                        let (ox, oy, ow, oh) = orig_bounds;
+                        if ow <= 0.0 || oh <= 0.0 {
+                            return;
+                        }
+                        let scale_x = w / ow;
+                        let scale_y = h / oh;
+                        let path = state.current_graph_path.read().clone();
+                        let mut doc = state.doc.write();
+                        for (id, (obj_x, obj_y, obj_w, obj_h)) in orig_objects {
+                            if let Some(obj) = doc.object_at_path_mut(&path, id) {
+                                obj.x = x + (obj_x - ox) * scale_x;
+                                obj.y = y + (obj_y - oy) * scale_y;
+                                obj.w = obj_w * scale_x;
+                                obj.h = obj_h * scale_y;
+                            }
+                        }
+                    }
                     DragState::Rotate { id, center_screen, start_angle, orig_rotation } => {
                         let angle = (sy - center_screen.1).atan2(sx - center_screen.0).to_degrees();
                         let mut rotation = orig_rotation + (angle - start_angle);
@@ -386,6 +441,63 @@ pub fn Canvas() -> Element {
                     ObjectView { key: "{id}", id }
                 }
 
+                if interactive {
+                    if let Some((gx, gy, gw, gh)) = group_bounds {
+                        div {
+                            class: "group-selection",
+                            style: "left: {gx}px; top: {gy}px; width: {gw}px; height: {gh}px;",
+                            div { class: "group-frame" }
+                            for (dir, fx, fy, cursor) in GROUP_RESIZE_DIRS {
+                                div {
+                                    class: "h group-h",
+                                    style: "left: {fx * gw}px; top: {fy * gh}px; width: {group_handle_size}px; height: {group_handle_size}px; cursor: {cursor};",
+                                    aria_label: "Hold Shift to preserve group ratio",
+                                    onmousedown: move |evt| {
+                                        evt.stop_propagation();
+                                        if evt.trigger_button() != Some(dioxus::html::input_data::MouseButton::Primary) {
+                                            return;
+                                        }
+                                        state.menu_open.set(false);
+                                        state.close_context_menu();
+                                        state.focus_canvas();
+                                        let coords = evt.client_coordinates();
+                                        let start_world = state.screen_to_world(coords.x, coords.y);
+                                        let path = state.current_graph_path.peek().clone();
+                                        let ids = state.selected.peek().clone();
+                                        let Some((orig_bounds, orig_objects)) = ({
+                                            let doc = state.doc.peek();
+                                            doc.objects_at_path(&path).and_then(|objects| {
+                                                selection_bounds(objects, &ids).map(|bounds| {
+                                                    let rects = objects
+                                                        .iter()
+                                                        .filter(|obj| ids.contains(&obj.id))
+                                                        .map(|obj| (obj.id, (obj.x, obj.y, obj.w, obj.h)))
+                                                        .collect::<Vec<_>>();
+                                                    (bounds, rects)
+                                                })
+                                            })
+                                        }) else {
+                                            return;
+                                        };
+                                        let aspect_ratio = if orig_bounds.3 > 0.0 {
+                                            Some(orig_bounds.2 / orig_bounds.3)
+                                        } else {
+                                            None
+                                        };
+                                        state.drag.set(DragState::ResizeSelection {
+                                            dir,
+                                            start_world,
+                                            orig_bounds,
+                                            orig_objects,
+                                            aspect_ratio,
+                                        });
+                                    },
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if !live.is_empty() {
                     svg {
                         class: "live-stroke",
@@ -432,6 +544,88 @@ fn aspect_scale(dir: &str, w: f64, h: f64, ow: f64, oh: f64) -> f64 {
         sx
     } else {
         sy
+    }
+}
+
+fn resized_bounds(
+    dir: &str,
+    dx: f64,
+    dy: f64,
+    orig: (f64, f64, f64, f64),
+    aspect_ratio: Option<f64>,
+) -> (f64, f64, f64, f64) {
+    let (ox, oy, ow, oh) = orig;
+    let mut x = ox;
+    let mut y = oy;
+    let mut w = ow;
+    let mut h = oh;
+
+    if dir.contains('e') {
+        w = (ow + dx).max(MIN_W);
+    }
+    if dir.contains('w') {
+        let dx = dx.min(ow - MIN_W);
+        x = ox + dx;
+        w = ow - dx;
+    }
+    if dir.contains('s') {
+        h = (oh + dy).max(MIN_H);
+    }
+    if dir.contains('n') {
+        let dy = dy.min(oh - MIN_H);
+        y = oy + dy;
+        h = oh - dy;
+    }
+
+    if let Some(ratio) = aspect_ratio {
+        let scale = aspect_scale(dir, w, h, ow, oh);
+        w = (ow * scale).max(MIN_W);
+        h = (oh * scale).max(MIN_H);
+        if h > w / ratio {
+            w = h * ratio;
+        } else {
+            h = w / ratio;
+        }
+
+        if dir.contains('w') {
+            x = ox + ow - w;
+        } else if !dir.contains('e') {
+            x = ox + (ow - w) / 2.0;
+        } else {
+            x = ox;
+        }
+
+        if dir.contains('n') {
+            y = oy + oh - h;
+        } else if !dir.contains('s') {
+            y = oy + (oh - h) / 2.0;
+        } else {
+            y = oy;
+        }
+    }
+
+    (x, y, w, h)
+}
+
+fn selection_bounds(objects: &[CanvasObject], ids: &[u64]) -> Option<(f64, f64, f64, f64)> {
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+    let mut found = false;
+
+    for obj in objects.iter().filter(|obj| ids.contains(&obj.id)) {
+        min_x = min_x.min(obj.x);
+        min_y = min_y.min(obj.y);
+        max_x = max_x.max(obj.x + obj.w);
+        max_y = max_y.max(obj.y + obj.h);
+        found = true;
+    }
+
+    if found {
+        Some((min_x, min_y, max_x - min_x, max_y - min_y))
+    } else {
+        None
     }
 }
 

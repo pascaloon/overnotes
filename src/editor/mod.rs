@@ -62,6 +62,13 @@ pub enum DragState {
         rotation: f64,
         aspect_ratio: Option<f64>,
     },
+    ResizeSelection {
+        dir: &'static str,
+        start_world: (f64, f64),
+        orig_bounds: (f64, f64, f64, f64),
+        orig_objects: Vec<(u64, (f64, f64, f64, f64))>,
+        aspect_ratio: Option<f64>,
+    },
     Rotate {
         id: u64,
         center_screen: (f64, f64),

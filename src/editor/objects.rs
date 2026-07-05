@@ -274,7 +274,7 @@ pub fn ObjectView(id: u64) -> Element {
                         } else {
                             div {
                                 class: "subgraph-name",
-                                title: "Double-click to rename",
+                                aria_label: "Double-click to rename",
                                 ondoubleclick: move |evt| {
                                     evt.stop_propagation();
                                     state.select_only(id);
@@ -321,7 +321,7 @@ pub fn ObjectView(id: u64) -> Element {
                                     aspect_ratio,
                                 });
                             },
-                            title: if is_image { "Hold Shift to keep image ratio" },
+                            aria_label: if is_image { "Hold Shift to keep image ratio" },
                         }
                     }
 

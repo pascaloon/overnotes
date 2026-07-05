@@ -167,7 +167,8 @@ pub fn Launcher() -> Element {
                         span { "Running games" }
                         button {
                             class: "icon-btn",
-                            title: "Refresh",
+                            class: "has-tooltip",
+                            aria_label: "Refresh",
                             onclick: move |_| {
                                 processes.set(process::list_game_windows());
                             },
