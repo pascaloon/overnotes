@@ -278,8 +278,13 @@ impl Document {
         true
     }
 
-    pub fn move_object_into_subgraph(&mut self, path: &[u64], id: u64, target_id: u64) -> bool {
-        if id == target_id {
+    pub fn move_objects_into_subgraph(
+        &mut self,
+        path: &[u64],
+        ids: &[u64],
+        target_id: u64,
+    ) -> bool {
+        if ids.is_empty() || ids.contains(&target_id) {
             return false;
         }
         let Some(objects) = self.objects_at_path_mut(path) else {
@@ -291,19 +296,27 @@ impl Document {
         ) {
             return false;
         }
-        let Some(pos) = objects.iter().position(|o| o.id == id) else {
+        let mut moved = Vec::new();
+        let mut i = 0;
+        while i < objects.len() {
+            if ids.contains(&objects[i].id) {
+                moved.push(objects.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+        if moved.is_empty() {
             return false;
-        };
-        let obj = objects.remove(pos);
+        }
         let Some(target) = objects.iter_mut().find(|o| o.id == target_id) else {
-            objects.insert(pos, obj);
+            objects.extend(moved);
             return false;
         };
         let ObjectKind::Subgraph { objects: child, .. } = &mut target.kind else {
-            objects.insert(pos, obj);
+            objects.extend(moved);
             return false;
         };
-        child.push(obj);
+        child.extend(moved);
         true
     }
 

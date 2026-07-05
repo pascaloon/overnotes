@@ -144,23 +144,25 @@ pub fn Canvas() -> Element {
                         }
                     }
                     DragState::MoveObjects {
-                        anchor_id,
                         start_world,
                         orig_positions,
+                        ..
                     } => {
                         let (wx, wy) = state.screen_to_world(sx, sy);
                         let path = state.current_graph_path.read().clone();
                         let mut doc = state.doc.write();
-                        for (id, orig_pos) in orig_positions {
-                            if let Some(obj) = doc.object_at_path_mut(&path, id) {
+                        for (id, orig_pos) in &orig_positions {
+                            if let Some(obj) = doc.object_at_path_mut(&path, *id) {
                                 obj.x = orig_pos.0 + (wx - start_world.0);
                                 obj.y = orig_pos.1 + (wy - start_world.1);
                             }
                         }
                         drop(doc);
-                        if state.selected.read().len() == 1 {
-                            state.update_subgraph_drop_target(anchor_id, (sx, sy));
-                        }
+                        let moving_ids = orig_positions
+                            .iter()
+                            .map(|(id, _)| *id)
+                            .collect::<Vec<_>>();
+                        state.update_subgraph_drop_target(&moving_ids, (sx, sy));
                     }
                     DragState::BoxSelect { start_screen, .. } => {
                         state.drag.set(DragState::BoxSelect {
@@ -279,13 +281,14 @@ pub fn Canvas() -> Element {
                     }
                     DragState::DrawStroke => state.finish_stroke(),
                     DragState::MoveObjects {
-                        anchor_id,
                         orig_positions,
                         ..
                     } => {
-                        if orig_positions.len() == 1 {
-                            state.try_drop_object_into_subgraph(anchor_id);
-                        }
+                        let moving_ids = orig_positions
+                            .iter()
+                            .map(|(id, _)| *id)
+                            .collect::<Vec<_>>();
+                        state.try_drop_objects_into_subgraph(&moving_ids);
                         state.drop_target.set(None);
                     }
                     DragState::BoxSelect {

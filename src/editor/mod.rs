@@ -707,10 +707,11 @@ impl EditorState {
         self.set_selection(ids);
     }
 
-    pub fn update_subgraph_drop_target(&mut self, id: u64, screen_pos: (f64, f64)) {
+    pub fn update_subgraph_drop_target(&mut self, moving_ids: &[u64], screen_pos: (f64, f64)) {
         let path = self.current_graph_path.read().clone();
+        let cursor_world = self.screen_to_world(screen_pos.0, screen_pos.1);
         let target = self
-            .find_subgraph_drop_target(&path, id)
+            .find_subgraph_drop_target(&path, moving_ids, cursor_world)
             .map(|mut target| {
                 target.screen_pos = screen_pos;
                 target
@@ -718,13 +719,17 @@ impl EditorState {
         self.drop_target.set(target);
     }
 
-    fn find_subgraph_drop_target(&self, path: &[u64], id: u64) -> Option<SubgraphDropTarget> {
+    fn find_subgraph_drop_target(
+        &self,
+        path: &[u64],
+        moving_ids: &[u64],
+        cursor_world: (f64, f64),
+    ) -> Option<SubgraphDropTarget> {
         let doc = self.doc.read();
-        let obj = doc.object_at_path(path, id)?;
-        let (cx, cy) = (obj.x + obj.w / 2.0, obj.y + obj.h / 2.0);
+        let (cx, cy) = cursor_world;
         doc.objects_at_path(path).and_then(|objects| {
             objects.iter().rev().find_map(|candidate| {
-                if candidate.id == id
+                if moving_ids.contains(&candidate.id)
                     || cx < candidate.x
                     || cx > candidate.x + candidate.w
                     || cy < candidate.y
@@ -732,12 +737,12 @@ impl EditorState {
                 {
                     return None;
                 }
-                    if let ObjectKind::Subgraph { name, .. } = &candidate.kind {
-                        Some(SubgraphDropTarget {
-                            id: candidate.id,
-                            name: name.clone(),
-                            screen_pos: (0.0, 0.0),
-                        })
+                if let ObjectKind::Subgraph { name, .. } = &candidate.kind {
+                    Some(SubgraphDropTarget {
+                        id: candidate.id,
+                        name: name.clone(),
+                        screen_pos: (0.0, 0.0),
+                    })
                 } else {
                     None
                 }
@@ -745,11 +750,9 @@ impl EditorState {
         })
     }
 
-    pub fn try_drop_object_into_subgraph(&mut self, id: u64) -> bool {
+    pub fn try_drop_objects_into_subgraph(&mut self, ids: &[u64]) -> bool {
         let path = self.current_graph_path.read().clone();
-        let target_id = self
-            .find_subgraph_drop_target(&path, id)
-            .map(|target| target.id);
+        let target_id = self.drop_target.peek().as_ref().map(|target| target.id);
 
         let Some(target_id) = target_id else {
             return false;
@@ -757,7 +760,7 @@ impl EditorState {
         if self
             .doc
             .write()
-            .move_object_into_subgraph(&path, id, target_id)
+            .move_objects_into_subgraph(&path, ids, target_id)
         {
             self.deselect();
             return true;

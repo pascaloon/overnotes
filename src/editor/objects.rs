@@ -31,6 +31,7 @@ pub fn ObjectView(id: u64) -> Element {
     let opacity_override = obj.opacity_override;
     let kind = obj.kind.clone();
     let is_image = matches!(kind, ObjectKind::Image { .. });
+    let is_subgraph = matches!(kind, ObjectKind::Subgraph { .. });
     let overview_opacity = doc.overview_opacity;
     drop(doc);
 
@@ -56,6 +57,15 @@ pub fn ObjectView(id: u64) -> Element {
     };
     let drop_target = state.drop_target.read().clone();
     let is_drop_target = drop_target.as_ref().is_some_and(|target| target.id == id);
+    let drag_state = state.drag.read().clone();
+    let is_being_moved = match &drag_state {
+        DragState::MoveObjects { orig_positions, .. } => {
+            orig_positions.iter().any(|(moving_id, _)| *moving_id == id)
+        }
+        _ => false,
+    };
+    let lift_as_folder_target =
+        is_subgraph && !is_being_moved && matches!(drag_state, DragState::MoveObjects { .. });
 
     let on_body_down = move |evt: Event<MouseData>| {
         if !interactive || tool != Tool::Select {
@@ -107,6 +117,7 @@ pub fn ObjectView(id: u64) -> Element {
     rsx! {
         div {
             class: "obj",
+            class: if lift_as_folder_target { "folder-drag-target" },
             class: if is_drop_target { "drop-target" },
             style: "left: {x}px; top: {y}px; width: {w}px; height: {h}px; transform: rotate({rotation}deg); opacity: {object_opacity};",
             onmousedown: on_body_down,

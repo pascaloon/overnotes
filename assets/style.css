@@ -342,6 +342,23 @@ input[type="range"] {
   transform-origin: center center;
 }
 
+.obj.folder-drag-target {
+  z-index: 55;
+}
+
+.obj.folder-drag-target .folder-icon {
+  filter: drop-shadow(0 7px 14px rgba(0, 0, 0, 0.42))
+    drop-shadow(0 0 14px rgba(122, 162, 255, 0.36));
+}
+
+.obj.folder-drag-target .subgraph-body {
+  opacity: 0.96;
+}
+
+.obj.drop-target {
+  z-index: 60;
+}
+
 .obj.drop-target::after {
   content: "";
   position: absolute;
@@ -351,6 +368,11 @@ input[type="range"] {
   background: rgba(122, 162, 255, 0.12);
   box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.12);
   pointer-events: none;
+}
+
+.obj.drop-target .folder-icon {
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.48))
+    drop-shadow(0 0 22px rgba(122, 162, 255, 0.82));
 }
 
 .drop-label {
@@ -754,7 +776,7 @@ input[type="text"].subgraph-name-input {
 
 .object-submenu {
   position: absolute;
-  left: calc(100% + 6px);
+  left: calc(100% - 1px);
   top: -5px;
   width: 240px;
   max-height: 320px;
