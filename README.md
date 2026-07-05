@@ -1,5 +1,9 @@
 # Overnotes
 
+> **Disclaimer** — This project is *vibe-coded*. Bugs, rough edges, and
+> questionable architecture may abound. On the bright side, it's **free and
+> open-source**. 🤷
+
 Pin notes over your game. Overnotes is a Windows 11 overlay app for taking and
 connecting notes while playing — a Miro-like canvas (sticky notes, freehand
 drawing, images) that floats over the game window with adjustable transparency.
