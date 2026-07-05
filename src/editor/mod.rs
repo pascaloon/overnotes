@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use dioxus::prelude::*;
 
 use crate::store::{
-    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_SUBGRAPH_COLOR, Document, ObjectKind,
+    self, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_SUBGRAPH_COLOR, Document, GraphView, ObjectKind,
 };
 
 /// Where the editor is hosted.
@@ -115,13 +115,14 @@ pub struct EditorState {
 impl EditorState {
     pub fn create(host: EditorHost, game_hwnd: Option<isize>, doc: Document) -> Self {
         let cache = build_image_cache(&doc);
+        let view = doc.view_at_path(&[]).unwrap_or_default();
         Self {
             host,
             game_hwnd,
             mode: Signal::new(ViewMode::Edit),
             doc: Signal::new(doc),
-            pan: Signal::new((0.0, 0.0)),
-            zoom: Signal::new(1.0),
+            pan: Signal::new(view.pan()),
+            zoom: Signal::new(view.zoom),
             tool: Signal::new(Tool::Select),
             selected: Signal::new(None),
             editing_note: Signal::new(None),
@@ -167,6 +168,33 @@ impl EditorState {
         (wx * z + px, wy * z + py)
     }
 
+    pub fn set_pan(&mut self, pan: (f64, f64)) {
+        self.pan.set(pan);
+        self.persist_current_graph_view();
+    }
+
+    pub fn set_camera(&mut self, pan: (f64, f64), zoom: f64) {
+        self.pan.set(pan);
+        self.zoom.set(zoom);
+        self.persist_current_graph_view();
+    }
+
+    pub fn persist_current_graph_view(&mut self) {
+        let path = self.current_graph_path.read().clone();
+        let pan = *self.pan.read();
+        let zoom = *self.zoom.read();
+        self.doc
+            .write()
+            .set_view_at_path(&path, GraphView::new(pan, zoom));
+    }
+
+    fn load_current_graph_view(&mut self) {
+        let path = self.current_graph_path.read().clone();
+        let view = self.doc.read().view_at_path(&path).unwrap_or_default();
+        self.pan.set(view.pan());
+        self.zoom.set(view.zoom);
+    }
+
     pub fn select_only(&mut self, id: u64) {
         self.selected.set(Some(id));
         if *self.editing_note.read() != Some(id) {
@@ -191,12 +219,7 @@ impl EditorState {
 
     pub fn open_object_context_menu(&mut self, id: u64, x: f64, y: f64) {
         let source_path = self.current_graph_path.read().clone();
-        if self
-            .doc
-            .read()
-            .object_at_path(&source_path, id)
-            .is_none()
-        {
+        if self.doc.read().object_at_path(&source_path, id).is_none() {
             return;
         }
         self.selected.set(Some(id));
@@ -303,6 +326,7 @@ impl EditorState {
             kind: ObjectKind::Subgraph {
                 name: "New subgraph".to_string(),
                 color: DEFAULT_SUBGRAPH_COLOR.to_string(),
+                view: GraphView::default(),
                 objects: Vec::new(),
             },
         });
@@ -455,6 +479,7 @@ impl EditorState {
     }
 
     pub fn enter_subgraph(&mut self, id: u64) {
+        self.persist_current_graph_view();
         let path = self.current_graph_path.read().clone();
         if !matches!(
             self.doc.read().object_at_path(&path, id).map(|o| &o.kind),
@@ -465,7 +490,7 @@ impl EditorState {
         let mut next = path;
         next.push(id);
         self.current_graph_path.set(next);
-        self.reset_graph_view();
+        self.restore_graph_view();
     }
 
     pub fn rename_selected_subgraph(&mut self) {
@@ -497,7 +522,9 @@ impl EditorState {
             self.close_context_menu();
             return;
         }
+        self.persist_current_graph_view();
         self.current_graph_path.set(menu.source_path.clone());
+        self.load_current_graph_view();
         self.selected.set(Some(menu.id));
         self.editing_note.set(None);
         self.editing_subgraph.set(Some(menu.id));
@@ -524,19 +551,19 @@ impl EditorState {
     }
 
     pub fn navigate_to_graph_depth(&mut self, depth: usize) {
+        self.persist_current_graph_view();
         let mut path = self.current_graph_path.read().clone();
         path.truncate(depth);
         self.current_graph_path.set(path);
-        self.reset_graph_view();
+        self.restore_graph_view();
     }
 
-    fn reset_graph_view(&mut self) {
+    fn restore_graph_view(&mut self) {
         self.deselect();
         self.drag.set(DragState::None);
         self.menu_open.set(false);
         self.close_context_menu();
-        self.pan.set((0.0, 0.0));
-        self.zoom.set(1.0);
+        self.load_current_graph_view();
         self.tool.set(Tool::Select);
     }
 
@@ -586,6 +613,7 @@ impl EditorState {
     pub fn load_document(&mut self, doc_id: &str) {
         let game_exe = self.doc.read().game_exe.clone();
         // Persist current before switching.
+        self.persist_current_graph_view();
         let _ = store::save_document(&self.doc.read());
         let Some(new_doc) = store::load_document(&game_exe, doc_id) else {
             self.show_toast("Could not load document");
@@ -596,8 +624,7 @@ impl EditorState {
         self.doc.set(new_doc);
         self.current_graph_path.set(Vec::new());
         self.deselect();
-        self.pan.set((0.0, 0.0));
-        self.zoom.set(1.0);
+        self.load_current_graph_view();
     }
 
     pub fn show_toast(&mut self, msg: &str) {

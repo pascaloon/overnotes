@@ -117,7 +117,7 @@ pub fn Canvas() -> Element {
                     DragState::Pan { start_mouse, start_pan, moved } => {
                         let dx = sx - start_mouse.0;
                         let dy = sy - start_mouse.1;
-                        state.pan.set((start_pan.0 + dx, start_pan.1 + dy));
+                        state.set_pan((start_pan.0 + dx, start_pan.1 + dy));
                         if !moved && (dx.abs() > 3.0 || dy.abs() > 3.0) {
                             state.drag.set(DragState::Pan { start_mouse, start_pan, moved: true });
                         }
@@ -273,8 +273,7 @@ pub fn Canvas() -> Element {
                 let (px, py) = *state.pan.peek();
                 let wx = (mx - px) / old_zoom;
                 let wy = (my - py) / old_zoom;
-                state.zoom.set(new_zoom);
-                state.pan.set((mx - wx * new_zoom, my - wy * new_zoom));
+                state.set_camera((mx - wx * new_zoom, my - wy * new_zoom), new_zoom);
             },
 
             onkeydown: move |evt| {

@@ -23,9 +23,42 @@ pub struct Document {
     pub overview_opacity: f64,
     pub edit_opacity: f64,
     #[serde(default)]
+    pub root_view: GraphView,
+    #[serde(default)]
     pub next_object_id: u64,
     #[serde(default)]
     pub objects: Vec<CanvasObject>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+pub struct GraphView {
+    pub pan_x: f64,
+    pub pan_y: f64,
+    pub zoom: f64,
+}
+
+impl Default for GraphView {
+    fn default() -> Self {
+        Self {
+            pan_x: 0.0,
+            pan_y: 0.0,
+            zoom: 1.0,
+        }
+    }
+}
+
+impl GraphView {
+    pub fn new(pan: (f64, f64), zoom: f64) -> Self {
+        Self {
+            pan_x: pan.0,
+            pan_y: pan.1,
+            zoom,
+        }
+    }
+
+    pub fn pan(self) -> (f64, f64) {
+        (self.pan_x, self.pan_y)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -64,6 +97,8 @@ pub enum ObjectKind {
         name: String,
         color: String,
         #[serde(default)]
+        view: GraphView,
+        #[serde(default)]
         objects: Vec<CanvasObject>,
     },
 }
@@ -88,6 +123,7 @@ impl Document {
             game_exe: game_exe.to_string(),
             overview_opacity: 0.6,
             edit_opacity: 0.95,
+            root_view: GraphView::default(),
             next_object_id: 1,
             objects: Vec::new(),
         }
@@ -121,6 +157,48 @@ impl Document {
             objects = child;
         }
         Some(objects)
+    }
+
+    pub fn view_at_path(&self, path: &[u64]) -> Option<GraphView> {
+        if path.is_empty() {
+            return Some(self.root_view);
+        }
+        let mut objects = self.objects.as_slice();
+        for (i, id) in path.iter().enumerate() {
+            let obj = objects.iter().find(|o| o.id == *id)?;
+            let ObjectKind::Subgraph {
+                view,
+                objects: child,
+                ..
+            } = &obj.kind
+            else {
+                return None;
+            };
+            if i + 1 == path.len() {
+                return Some(*view);
+            }
+            objects = child.as_slice();
+        }
+        None
+    }
+
+    pub fn set_view_at_path(&mut self, path: &[u64], view: GraphView) -> bool {
+        if path.is_empty() {
+            self.root_view = view;
+            return true;
+        }
+        let Some(id) = path.last().copied() else {
+            return false;
+        };
+        let parent_path = &path[..path.len().saturating_sub(1)];
+        let Some(obj) = self.object_at_path_mut(parent_path, id) else {
+            return false;
+        };
+        let ObjectKind::Subgraph { view: target, .. } = &mut obj.kind else {
+            return false;
+        };
+        *target = view;
+        true
     }
 
     pub fn object_at_path(&self, path: &[u64], id: u64) -> Option<&CanvasObject> {
@@ -179,7 +257,12 @@ impl Document {
         true
     }
 
-    pub fn move_object_to_graph(&mut self, source_path: &[u64], id: u64, target_path: &[u64]) -> bool {
+    pub fn move_object_to_graph(
+        &mut self,
+        source_path: &[u64],
+        id: u64,
+        target_path: &[u64],
+    ) -> bool {
         if source_path == target_path || target_path.contains(&id) {
             return false;
         }
@@ -224,7 +307,11 @@ impl Document {
         out
     }
 
-    pub fn subgraph_destinations(&self, moving_id: u64, source_path: &[u64]) -> Vec<SubgraphDestination> {
+    pub fn subgraph_destinations(
+        &self,
+        moving_id: u64,
+        source_path: &[u64],
+    ) -> Vec<SubgraphDestination> {
         let mut out = Vec::new();
         collect_subgraph_destinations(
             &self.objects,
