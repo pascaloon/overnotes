@@ -30,8 +30,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@cargo-binstall
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --version 0.7.0 --locked
+        run: cargo binstall dioxus-cli --version 0.7.0 --locked --no-confirm
       - name: Build release
         run: cargo build --release --bin overnotes
       - name: Bundle desktop release
