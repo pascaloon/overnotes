@@ -1,2 +1,7 @@
+[application]
+name = "Overnotes"
+
 [bundle]
-identifier = "pascaloon"
+identifier = "com.pascaloon.overnotes"
+publisher = "Pascal Asselin"
+short_description = "A Windows overlay notes app"
