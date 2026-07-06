@@ -1144,6 +1144,11 @@ input[type="text"].shortcut-input {
   color: var(--text);
 }
 
+.bar-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .bar-btn.danger:hover {
   color: var(--danger);
 }

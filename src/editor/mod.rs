@@ -128,6 +128,7 @@ pub struct EditorState {
     pub stroke_width: Signal<f64>,
     pub menu_open: Signal<bool>,
     pub shot_mode: Signal<bool>,
+    pub overview_hidden: Signal<bool>,
     pub pending_shot: Signal<Option<PendingScreenshot>>,
     pub toast: Signal<Option<String>>,
     pub context_menu: Signal<Option<ObjectContextMenu>>,
@@ -161,6 +162,7 @@ impl EditorState {
             stroke_width: Signal::new(3.0),
             menu_open: Signal::new(false),
             shot_mode: Signal::new(false),
+            overview_hidden: Signal::new(false),
             pending_shot: Signal::new(None),
             toast: Signal::new(None),
             context_menu: Signal::new(None),
@@ -394,6 +396,36 @@ impl EditorState {
     pub fn cancel_region_screenshot(&mut self) {
         self.shot_mode.set(false);
         self.pending_shot.set(None);
+    }
+
+    pub fn return_to_overview(&mut self) {
+        self.deselect();
+        self.menu_open.set(false);
+        self.cancel_region_screenshot();
+        self.mode.set(ViewMode::Overview);
+    }
+
+    pub fn toggle_overview_hidden(&mut self) {
+        let next = !*self.overview_hidden.peek();
+        self.overview_hidden.set(next);
+        self.return_to_overview();
+    }
+
+    pub fn detach_overlay(&mut self) {
+        if self.host != EditorHost::Overlay {
+            return;
+        }
+        let doc = self.doc.peek().clone();
+        let game_exe = doc.game_exe.clone();
+        let doc_id = doc.id.clone();
+        let doc_name = doc.name.clone();
+        let _ = store::save_document(&doc);
+        let dom = VirtualDom::new_with_props(
+            crate::ui::standalone::StandaloneRoot,
+            crate::ui::standalone::StandaloneRootProps { game_exe, doc_id },
+        );
+        let _ = dioxus::desktop::window().new_window(dom, crate::ui::standalone_config(&doc_name));
+        dioxus::desktop::window().close();
     }
 
     pub fn add_note(&mut self, wx: f64, wy: f64) {
@@ -885,6 +917,8 @@ pub fn Editor() -> Element {
             let d = state.doc.read();
             if shot_active {
                 1.0
+            } else if !edit && *state.overview_hidden.read() {
+                0.0
             } else if edit {
                 d.edit_opacity
             } else {

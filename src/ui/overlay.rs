@@ -179,9 +179,8 @@ fn toggle_edit_mode(mut state: EditorState) {
         ViewMode::Edit => ViewMode::Overview,
     };
     if next == ViewMode::Overview {
-        state.deselect();
-        state.menu_open.set(false);
-        state.cancel_region_screenshot();
+        state.return_to_overview();
+    } else {
+        state.mode.set(next);
     }
-    state.mode.set(next);
 }

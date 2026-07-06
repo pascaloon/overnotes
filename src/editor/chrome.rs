@@ -3,7 +3,7 @@
 
 use dioxus::prelude::*;
 
-use super::{EditorHost, EditorState, Tool, ViewMode};
+use super::{EditorHost, EditorState, Tool};
 use crate::store::{self, KeyboardShortcut, ObjectKind, STROKE_COLORS};
 
 #[component]
@@ -647,6 +647,13 @@ pub fn BottomBar() -> Element {
     let settings = state.settings.read().clone();
     let screenshot_label = settings.overlay_screenshot_shortcut.label;
     let toggle_label = settings.overlay_toggle_shortcut.label;
+    let overview_hidden = *state.overview_hidden.read();
+    let hide_label = if overview_hidden { "Show" } else { "Hide" };
+    let hide_tooltip = if overview_hidden {
+        "Show overview overlay"
+    } else {
+        "Hide overview overlay"
+    };
 
     rsx! {
         div { class: "bottombar",
@@ -666,13 +673,50 @@ pub fn BottomBar() -> Element {
             }
             div { class: "divider" }
             button {
+                class: "bar-btn",
+                class: "has-tooltip",
+                class: if overview_hidden { "active" },
+                aria_label: "{hide_tooltip}",
+                onclick: move |_| {
+                    state.toggle_overview_hidden();
+                },
+                svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
+                    stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                    stroke_linejoin: "round",
+                    if overview_hidden {
+                        path { d: "M2 12 S5.5 5 12 5 S22 12 22 12 S18.5 19 12 19 S2 12 2 12" }
+                        circle { cx: "12", cy: "12", r: "3" }
+                    } else {
+                        path { d: "M3 3 L21 21" }
+                        path { d: "M10.6 10.6 A3 3 0 0 0 13.4 13.4" }
+                        path { d: "M9.5 5.4 A10.6 10.6 0 0 1 12 5 C18.5 5 22 12 22 12 A18.9 18.9 0 0 1 18.6 16.6" }
+                        path { d: "M6.1 6.1 A18.9 18.9 0 0 0 2 12 S5.5 19 12 19 A10.7 10.7 0 0 0 15.3 18.5" }
+                    }
+                }
+                "{hide_label}"
+            }
+            button {
+                class: "bar-btn",
+                class: "has-tooltip",
+                aria_label: "Detach overlay into a standalone window",
+                onclick: move |_| {
+                    state.detach_overlay();
+                },
+                svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
+                    stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                    stroke_linejoin: "round",
+                    path { d: "M14 4 H20 V10" }
+                    path { d: "M20 4 L10 14" }
+                    path { d: "M10 6 H6 A2 2 0 0 0 4 8 V18 A2 2 0 0 0 6 20 H16 A2 2 0 0 0 18 18 V14" }
+                }
+                "Detach"
+            }
+            button {
                 class: "bar-btn danger",
                 class: "has-tooltip",
                 aria_label: "Back to overview ({toggle_label})",
                 onclick: move |_| {
-                    state.deselect();
-                    state.menu_open.set(false);
-                    state.mode.set(ViewMode::Overview);
+                    state.return_to_overview();
                 },
                 svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
