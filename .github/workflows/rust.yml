@@ -33,13 +33,22 @@ jobs:
       - name: Install cargo-binstall
         uses: taiki-e/install-action@cargo-binstall
       - name: Install Dioxus CLI
-        run: cargo binstall dioxus-cli --version 0.7.0 --locked --no-confirm
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+          $package = $metadata.packages | Where-Object { $_.name -eq "overnotes" } | Select-Object -First 1
+          $versionReq = ($package.dependencies | Where-Object { $_.name -eq "dioxus" } | Select-Object -First 1).req
+          $dioxusVersion = (($versionReq -replace '^[=^~>< ]+', '') -split ',')[0].Trim()
+          Write-Host "Installing dioxus-cli $dioxusVersion to match dioxus dependency $versionReq"
+          cargo binstall dioxus-cli --version $dioxusVersion --locked --no-confirm
       - name: Build release
         run: cargo build --release --bin overnotes
       - name: Bundle desktop release
-        run: dx bundle --desktop --release
+        run: dx bundle --desktop --release --out-dir dist
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/overnotes.exe
+          files: |
+            dist/*
+            target/release/overnotes.exe
           generate_release_notes: true
