@@ -110,18 +110,18 @@ pub fn Canvas() -> Element {
                 if !is_primary && !is_middle {
                     return;
                 }
-                if tool == Tool::Select && is_primary && evt.modifiers().shift() {
-                    state.drag.set(DragState::BoxSelect {
-                        start_screen: (sx, sy),
-                        current_screen: (sx, sy),
-                    });
-                    return;
-                }
-                if is_middle || tool == Tool::Select {
+                if is_middle {
                     state.drag.set(DragState::Pan {
                         start_mouse: (sx, sy),
                         start_pan: *state.pan.peek(),
                         moved: false,
+                    });
+                    return;
+                }
+                if tool == Tool::Select && is_primary {
+                    state.drag.set(DragState::BoxSelect {
+                        start_screen: (sx, sy),
+                        current_screen: (sx, sy),
                     });
                     return;
                 }
@@ -340,11 +340,7 @@ pub fn Canvas() -> Element {
                 }
                 let drag = state.drag.peek().clone();
                 match drag {
-                    DragState::Pan { moved, .. } => {
-                        if !moved {
-                            state.deselect();
-                        }
-                    }
+                    DragState::Pan { .. } => {}
                     DragState::DrawStroke => state.finish_stroke(),
                     DragState::MoveObjects {
                         orig_positions,
@@ -368,6 +364,8 @@ pub fn Canvas() -> Element {
                                 state.screen_to_world(start_screen.0, start_screen.1),
                                 state.screen_to_world(current_screen.0, current_screen.1),
                             );
+                        } else {
+                            state.deselect();
                         }
                     }
                     _ => {}
