@@ -258,6 +258,14 @@ impl EditorState {
         self.editing_subgraph.set(None);
     }
 
+    pub fn activate_tool(&mut self, tool: Tool) {
+        if tool != Tool::Select {
+            self.deselect();
+        }
+        self.close_context_menu();
+        self.tool.set(tool);
+    }
+
     pub fn close_context_menu(&mut self) {
         self.context_menu.set(None);
     }

@@ -22,7 +22,7 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Select { "active" },
                 aria_label: "Select / move (Esc)",
-                onclick: move |_| state.tool.set(Tool::Select),
+                onclick: move |_| state.activate_tool(Tool::Select),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M5 3 L19 12 L12 13.5 L9.5 20 Z" }
@@ -33,7 +33,7 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Note { "active" },
                 aria_label: "Add note",
-                onclick: move |_| state.tool.set(Tool::Note),
+                onclick: move |_| state.activate_tool(Tool::Note),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M4 4 H20 V14 L14 20 H4 Z" }
@@ -45,7 +45,7 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Subgraph { "active" },
                 aria_label: "Add subgraph",
-                onclick: move |_| state.tool.set(Tool::Subgraph),
+                onclick: move |_| state.activate_tool(Tool::Subgraph),
                 svg { width: "22", height: "22", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M3 7 H9 L11 10 H21 V19 H3 Z" }
@@ -57,7 +57,7 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if draw_active { "active" },
                 aria_label: "Draw",
-                onclick: move |_| state.tool.set(Tool::Draw),
+                onclick: move |_| state.activate_tool(Tool::Draw),
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M4 20 L5 15.5 L16.5 4 L20 7.5 L8.5 19 Z" }
