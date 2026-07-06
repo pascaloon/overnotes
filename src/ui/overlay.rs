@@ -89,7 +89,7 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
     });
 
     rsx! {
-        document::Style { {super::STYLE} }
+        document::Stylesheet { href: asset!("/assets/style.css") }
         OverlayShortcut {
             action: OverlayShortcutAction::ToggleEditMode,
         }

@@ -21,7 +21,7 @@ pub fn StandaloneRoot(game_exe: String, doc_id: String) -> Element {
     });
 
     rsx! {
-        document::Style { {super::STYLE} }
+        document::Stylesheet { href: asset!("/assets/style.css") }
         Editor {}
     }
 }

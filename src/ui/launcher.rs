@@ -151,7 +151,7 @@ pub fn Launcher() -> Element {
     let new_name = new_doc_name.read().clone();
 
     rsx! {
-        document::Style { {super::STYLE} }
+        document::Stylesheet { href: asset!("/assets/style.css") }
         div { class: "launcher",
             div { class: "launcher-header",
                 div { class: "logo", "O" }

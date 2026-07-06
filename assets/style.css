@@ -347,7 +347,7 @@ input[type="range"] {
 }
 
 .obj.folder-drag-target {
-  z-index: 55;
+  z-index: 75;
 }
 
 .obj.folder-drag-target .folder-icon {
@@ -360,7 +360,7 @@ input[type="range"] {
 }
 
 .obj.drop-target {
-  z-index: 60;
+  z-index: 80;
 }
 
 .obj.drop-target::after {
@@ -395,7 +395,7 @@ input[type="range"] {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-  z-index: 65;
+  z-index: 85;
 }
 
 .sel-frame {

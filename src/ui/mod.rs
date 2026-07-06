@@ -8,9 +8,6 @@ use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 use dioxus::desktop::{Config, WindowBuilder};
 
-/// The single dark-theme stylesheet shared by every window.
-pub const STYLE: &str = include_str!("../../assets/style.css");
-
 pub fn launcher_config() -> Config {
     let window = WindowBuilder::new()
         .with_title("Overnotes")
