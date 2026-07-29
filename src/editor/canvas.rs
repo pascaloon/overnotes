@@ -2,8 +2,8 @@
 
 use dioxus::prelude::*;
 
-use super::objects::{ObjectView, NOTE_FONT_SIZE_MAX, NOTE_FONT_SIZE_MIN};
-use super::{DragState, EditorState, Tool, ViewMode};
+use super::objects::{NOTE_FONT_SIZE_MAX, NOTE_FONT_SIZE_MIN, ObjectView};
+use super::{DragState, EditorState, Tool, TransactionKind, ViewMode};
 use crate::store::{CanvasObject, ObjectKind};
 
 const MIN_ZOOM: f64 = 0.2;
@@ -94,6 +94,8 @@ pub fn Canvas() -> Element {
                     let _ = data.set_focus(true).await;
                 });
             },
+            onblur: move |_| state.finalize_lost_pointer_gesture(),
+            onpointercancel: move |_| state.finalize_lost_pointer_gesture(),
 
             onmousedown: move |evt| {
                 if !interactive {
@@ -111,6 +113,7 @@ pub fn Canvas() -> Element {
                     return;
                 }
                 if is_middle {
+                    state.begin_transaction(TransactionKind::Gesture);
                     state.drag.set(DragState::Pan {
                         start_mouse: (sx, sy),
                         start_pan: *state.pan.peek(),
@@ -370,12 +373,24 @@ pub fn Canvas() -> Element {
                     }
                     _ => {}
                 }
+                if state.transaction_kind.peek().as_ref() == Some(&TransactionKind::Gesture) {
+                    state.commit_transaction();
+                }
                 state.drag.set(DragState::None);
             },
 
             onmouseleave: move |_| {
-                if matches!(*state.drag.peek(), DragState::DrawStroke) {
-                    state.finish_stroke();
+                let drag = state.drag.peek().clone();
+                match drag {
+                    DragState::DrawStroke => state.finish_stroke(),
+                    DragState::MoveObjects { orig_positions, .. } => {
+                        let moving_ids = orig_positions.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                        state.try_drop_objects_into_subgraph(&moving_ids);
+                    }
+                    _ => {}
+                }
+                if state.transaction_kind.peek().as_ref() == Some(&TransactionKind::Gesture) {
+                    state.commit_transaction();
                 }
                 state.drop_target.set(None);
                 state.drag.set(DragState::None);
@@ -398,7 +413,22 @@ pub fn Canvas() -> Element {
                 let (px, py) = *state.pan.peek();
                 let wx = (mx - px) / old_zoom;
                 let wy = (my - py) / old_zoom;
+                state.begin_transaction(TransactionKind::Wheel);
                 state.set_camera((mx - wx * new_zoom, my - wy * new_zoom), new_zoom);
+                let sequence = *state.wheel_sequence.peek() + 1;
+                state.wheel_sequence.set(sequence);
+                let document_id = state.doc.peek().id.clone();
+                let mut delayed_state = state;
+                spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(220)).await;
+                    if *delayed_state.wheel_sequence.peek() == sequence
+                        && delayed_state.doc.peek().id == document_id
+                        && delayed_state.transaction_kind.peek().as_ref()
+                            == Some(&TransactionKind::Wheel)
+                    {
+                        delayed_state.commit_transaction();
+                    }
+                });
             },
 
             onkeydown: move |evt| {
@@ -416,11 +446,15 @@ pub fn Canvas() -> Element {
                         state.rename_selected_subgraph();
                     }
                     Key::Escape => {
-                        if *state.shot_mode.peek() {
+                        if state.cancel_active_gesture() {
+                            // Cancelling restored the pre-gesture checkpoint.
+                        } else if *state.shot_mode.peek() {
                             state.cancel_region_screenshot();
                         } else if editing_note {
+                            state.commit_transaction();
                             state.editing_note.set(None);
                         } else if editing_subgraph {
+                            state.commit_transaction();
                             state.editing_subgraph.set(None);
                         } else if state.context_menu.read().is_some() {
                             state.close_context_menu();
@@ -493,6 +527,7 @@ pub fn Canvas() -> Element {
                                         } else {
                                             None
                                         };
+                                        state.begin_transaction(TransactionKind::Gesture);
                                         state.drag.set(DragState::ResizeSelection {
                                             dir,
                                             start_world,

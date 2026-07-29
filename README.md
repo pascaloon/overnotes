@@ -38,6 +38,10 @@ resizing an image to keep its aspect ratio. Documents autosave as
 JSON to `%APPDATA%\overnotes\data\documents\<game>\<doc-id>\doc.json`, with
 images stored alongside as PNG files.
 
+Canvas and document edits support up to 100 undo steps. Use `Ctrl+Z` to undo and
+`Ctrl+Y` or `Ctrl+Shift+Z` to redo, or use the history buttons at the top of the
+editor toolbar.
+
 ## Overlay technique
 
 Same family as the revamped Discord overlay / Xbox Game Bar: a separate

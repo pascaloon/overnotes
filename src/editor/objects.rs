@@ -4,7 +4,7 @@
 use dioxus::prelude::*;
 
 use super::canvas::{editor_interactive, points_attr};
-use super::{DragState, EditorHost, EditorState, Tool, ViewMode};
+use super::{DragState, EditorHost, EditorState, Tool, TransactionKind, ViewMode};
 use crate::store::{NOTE_COLORS, ObjectKind, SUBGRAPH_COLORS};
 
 pub(super) const NOTE_FONT_SIZE_MIN: f64 = 10.0;
@@ -120,6 +120,7 @@ pub fn ObjectView(id: u64) -> Element {
                 })
                 .collect::<Vec<_>>()
         };
+        state.begin_transaction(TransactionKind::Gesture);
         state.drag.set(DragState::MoveObjects {
             anchor_id: id,
             start_world,
@@ -188,19 +189,32 @@ pub fn ObjectView(id: u64) -> Element {
                                 placeholder: "Type a note...",
                                 spellcheck: "false",
                                 onmounted: move |evt| {
+                                    state.begin_transaction(TransactionKind::NoteText(id));
                                     let data = evt.data();
                                     spawn(async move {
                                         let _ = data.set_focus(true).await;
                                     });
                                 },
+                                onblur: move |_| {
+                                    state.commit_transaction();
+                                },
                                 onmousedown: move |evt| evt.stop_propagation(),
                                 oninput: move |evt| {
+                                    state.begin_transaction(TransactionKind::NoteText(id));
                                     let path = state.current_graph_path.read().clone();
                                     let mut doc = state.doc.write();
                                     if let Some(o) = doc.object_at_path_mut(&path, id) {
                                         if let ObjectKind::Note { text, .. } = &mut o.kind {
                                             *text = evt.value();
                                         }
+                                    }
+                                },
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Escape {
+                                        evt.stop_propagation();
+                                        state.commit_transaction();
+                                        state.editing_note.set(None);
+                                        state.focus_canvas();
                                     }
                                 },
                             }
@@ -266,13 +280,19 @@ pub fn ObjectView(id: u64) -> Element {
                                 value: "{name}",
                                 spellcheck: "false",
                                 onmounted: move |evt| {
+                                    state.begin_transaction(TransactionKind::SubgraphName(id));
                                     let data = evt.data();
                                     spawn(async move {
                                         let _ = data.set_focus(true).await;
                                     });
                                 },
+                                onblur: move |_| {
+                                    state.commit_transaction();
+                                    state.editing_subgraph.set(None);
+                                },
                                 onmousedown: move |evt| evt.stop_propagation(),
                                 oninput: move |evt| {
+                                    state.begin_transaction(TransactionKind::SubgraphName(id));
                                     let path = state.current_graph_path.read().clone();
                                     let mut doc = state.doc.write();
                                     if let Some(o) = doc.object_at_path_mut(&path, id) {
@@ -282,8 +302,9 @@ pub fn ObjectView(id: u64) -> Element {
                                     }
                                 },
                                 onkeydown: move |evt| {
-                                    evt.stop_propagation();
                                     if matches!(evt.key(), Key::Enter | Key::Escape) {
+                                        evt.stop_propagation();
+                                        state.commit_transaction();
                                         state.editing_subgraph.set(None);
                                         state.focus_canvas();
                                     }
@@ -327,6 +348,7 @@ pub fn ObjectView(id: u64) -> Element {
                                     evt.stop_propagation();
                                     evt.prevent_default();
                                     let coords = evt.client_coordinates();
+                                    state.begin_transaction(TransactionKind::Gesture);
                                     state.drag.set(DragState::NoteFontSize {
                                         id,
                                         start_mouse_x: coords.x,
@@ -361,12 +383,13 @@ pub fn ObjectView(id: u64) -> Element {
                                             evt.stop_propagation();
                                             evt.prevent_default();
                                             let path = state.current_graph_path.read().clone();
-                                            let mut doc = state.doc.write();
-                                            if let Some(o) = doc.object_at_path_mut(&path, id) {
-                                                if let ObjectKind::Note { color: c, .. } = &mut o.kind {
-                                                    *c = color.to_string();
+                                            state.edit_document(move |doc| {
+                                                if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                                    if let ObjectKind::Note { color: c, .. } = &mut o.kind {
+                                                        *c = color.to_string();
+                                                    }
                                                 }
-                                            }
+                                            });
                                         },
                                     }
                                 }
@@ -384,12 +407,13 @@ pub fn ObjectView(id: u64) -> Element {
                                             evt.stop_propagation();
                                             evt.prevent_default();
                                             let path = state.current_graph_path.read().clone();
-                                            let mut doc = state.doc.write();
-                                            if let Some(o) = doc.object_at_path_mut(&path, id) {
-                                                if let ObjectKind::Subgraph { color: c, .. } = &mut o.kind {
-                                                    *c = color.to_string();
+                                            state.edit_document(move |doc| {
+                                                if let Some(o) = doc.object_at_path_mut(&path, id) {
+                                                    if let ObjectKind::Subgraph { color: c, .. } = &mut o.kind {
+                                                        *c = color.to_string();
+                                                    }
                                                 }
-                                            }
+                                            });
                                         },
                                     }
                                 }
@@ -419,6 +443,7 @@ pub fn ObjectView(id: u64) -> Element {
                                 } else {
                                     None
                                 };
+                                state.begin_transaction(TransactionKind::Gesture);
                                 state.drag.set(DragState::Resize {
                                     id,
                                     dir,
@@ -449,6 +474,7 @@ pub fn ObjectView(id: u64) -> Element {
                             let start_angle = (coords.y - center_screen.1)
                                 .atan2(coords.x - center_screen.0)
                                 .to_degrees();
+                            state.begin_transaction(TransactionKind::Gesture);
                             state.drag.set(DragState::Rotate {
                                 id,
                                 center_screen,

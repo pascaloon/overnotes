@@ -3,6 +3,7 @@
 
 mod canvas;
 mod chrome;
+mod history;
 mod objects;
 
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ use crate::store::{
     self, AppSettings, CanvasObject, DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE,
     DEFAULT_SUBGRAPH_COLOR, Document, GraphView, ObjectKind,
 };
+use history::{Checkpoint, History};
 
 /// Where the editor is hosted.
 #[derive(Clone, Copy, PartialEq)]
@@ -84,12 +86,90 @@ pub enum DragState {
     DrawStroke,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TransactionKind {
+    Gesture,
+    Wheel,
+    NoteText(u64),
+    SubgraphName(u64),
+    DocumentName,
+    ObjectOpacity(u64),
+    OverviewOpacity,
+    EditOpacity,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HistoryShortcut {
+    Undo,
+    Redo,
+}
+
+fn history_shortcut(key: &Key, ctrl: bool, shift: bool) -> Option<HistoryShortcut> {
+    if !ctrl {
+        return None;
+    }
+    match key {
+        Key::Character(c) if c.eq_ignore_ascii_case("z") && shift => Some(HistoryShortcut::Redo),
+        Key::Character(c) if c.eq_ignore_ascii_case("z") => Some(HistoryShortcut::Undo),
+        Key::Character(c) if c.eq_ignore_ascii_case("y") => Some(HistoryShortcut::Redo),
+        _ => None,
+    }
+}
+
+/// Handle history keys from the viewport or an editable document control.
+/// Shortcut-capture inputs intentionally stop propagation before calling this.
+pub fn handle_history_shortcut(evt: &KeyboardEvent, state: &mut EditorState) -> bool {
+    let Some(action) =
+        history_shortcut(&evt.key(), evt.modifiers().ctrl(), evt.modifiers().shift())
+    else {
+        return false;
+    };
+    evt.prevent_default();
+    evt.stop_propagation();
+    match action {
+        HistoryShortcut::Undo => state.undo(),
+        HistoryShortcut::Redo => state.redo(),
+    }
+    true
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct AsyncOperationOrigin {
+    pub document_id: String,
+    pub graph_path: Vec<u64>,
+    pub generation: u64,
+}
+
+fn operation_context_matches(
+    origin: &AsyncOperationOrigin,
+    document_id: &str,
+    graph_path: &[u64],
+    generation: u64,
+) -> bool {
+    origin.document_id == document_id
+        && origin.graph_path == graph_path
+        && origin.generation == generation
+}
+
+/// Return the deepest valid graph path, used when restoring snapshots whose
+/// selected subgraph was removed by a later edit.
+fn validated_graph_path(document: &Document, path: &[u64]) -> Vec<u64> {
+    let mut valid = path.to_vec();
+    while document.view_at_path(&valid).is_none() {
+        if valid.pop().is_none() {
+            break;
+        }
+    }
+    valid
+}
+
 #[derive(Clone)]
 pub struct PendingScreenshot {
     pub png: Vec<u8>,
     pub width: u32,
     pub height: u32,
     pub data_url: String,
+    pub origin: AsyncOperationOrigin,
 }
 
 #[derive(Clone, PartialEq)]
@@ -137,6 +217,12 @@ pub struct EditorState {
     pub image_cache: Signal<HashMap<u64, String>>,
     /// Mounted handle of the canvas viewport, used to restore keyboard focus.
     pub viewport_mount: Signal<Option<std::rc::Rc<MountedData>>>,
+    pub history: Signal<History>,
+    pub transaction_kind: Signal<Option<TransactionKind>>,
+    /// Invalidates delayed wheel commits, including on document switches.
+    pub wheel_sequence: Signal<u64>,
+    /// Invalidates asynchronous image/capture work when its editor context changes.
+    pub operation_generation: Signal<u64>,
 }
 
 impl EditorState {
@@ -169,7 +255,171 @@ impl EditorState {
             drop_target: Signal::new(None),
             image_cache: Signal::new(cache),
             viewport_mount: Signal::new(None),
+            history: Signal::new(History::default()),
+            transaction_kind: Signal::new(None),
+            wheel_sequence: Signal::new(0),
+            operation_generation: Signal::new(0),
         }
+    }
+
+    fn checkpoint(&self) -> Checkpoint {
+        Checkpoint::new(
+            self.doc.peek().clone(),
+            self.current_graph_path.peek().clone(),
+            self.selected.peek().clone(),
+        )
+    }
+
+    pub fn async_operation_origin(&self) -> AsyncOperationOrigin {
+        AsyncOperationOrigin {
+            document_id: self.doc.peek().id.clone(),
+            graph_path: self.current_graph_path.peek().clone(),
+            generation: *self.operation_generation.peek(),
+        }
+    }
+
+    pub fn operation_context_is_current(&self, origin: &AsyncOperationOrigin) -> bool {
+        operation_context_matches(
+            origin,
+            &self.doc.peek().id,
+            &self.current_graph_path.peek(),
+            *self.operation_generation.peek(),
+        )
+    }
+
+    fn invalidate_async_operations(&mut self) {
+        let next = self.operation_generation.peek().wrapping_add(1);
+        self.operation_generation.set(next);
+    }
+
+    pub fn begin_transaction(&mut self, kind: TransactionKind) {
+        if self.transaction_kind.peek().as_ref() == Some(&kind) {
+            return;
+        }
+        self.commit_transaction();
+        let checkpoint = self.checkpoint();
+        self.history.write().begin(checkpoint);
+        self.transaction_kind.set(Some(kind));
+    }
+
+    pub fn commit_transaction(&mut self) -> bool {
+        if self.transaction_kind.peek().is_none() {
+            return false;
+        }
+        let checkpoint = self.checkpoint();
+        let changed = self.history.write().commit(&checkpoint);
+        self.transaction_kind.set(None);
+        changed
+    }
+
+    pub fn cancel_transaction(&mut self) {
+        let next_object_id = self.doc.peek().next_object_id;
+        let baseline = self.history.write().cancel();
+        self.transaction_kind.set(None);
+        if let Some(mut checkpoint) = baseline {
+            checkpoint.document.next_object_id =
+                checkpoint.document.next_object_id.max(next_object_id);
+            self.restore_checkpoint(checkpoint);
+        }
+    }
+
+    /// Finalize an interrupted pointer gesture so focus loss or pointer
+    /// cancellation cannot leave a stale transaction for a later action.
+    pub fn finalize_lost_pointer_gesture(&mut self) {
+        if matches!(*self.drag.peek(), DragState::DrawStroke) {
+            self.finish_stroke();
+        }
+        if self.transaction_kind.peek().as_ref() == Some(&TransactionKind::Gesture) {
+            self.commit_transaction();
+        }
+        self.drop_target.set(None);
+        self.drag.set(DragState::None);
+    }
+
+    /// Escape cancels an in-progress pointer gesture and restores its baseline.
+    pub fn cancel_active_gesture(&mut self) -> bool {
+        if matches!(*self.drag.peek(), DragState::None) {
+            return false;
+        }
+        if self.transaction_kind.peek().as_ref() == Some(&TransactionKind::Gesture) {
+            self.cancel_transaction();
+        }
+        self.live_points.set(Vec::new());
+        self.drop_target.set(None);
+        self.drag.set(DragState::None);
+        true
+    }
+
+    /// Apply one direct user action as exactly one history transaction.
+    pub fn edit_document(&mut self, edit: impl FnOnce(&mut Document)) -> bool {
+        self.commit_transaction();
+        let before = self.checkpoint();
+        self.history.write().begin(before);
+        edit(&mut self.doc.write());
+        let after = self.checkpoint();
+        self.history.write().commit(&after)
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.history.read().can_undo_from(&self.checkpoint())
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.history.read().can_redo()
+    }
+
+    pub fn undo(&mut self) {
+        self.commit_transaction();
+        let current = self.checkpoint();
+        let target = self.history.write().undo(current);
+        if let Some(target) = target {
+            self.restore_checkpoint(target);
+        }
+    }
+
+    pub fn redo(&mut self) {
+        self.commit_transaction();
+        let current = self.checkpoint();
+        let target = self.history.write().redo(current);
+        if let Some(target) = target {
+            self.restore_checkpoint(target);
+        }
+    }
+
+    fn restore_checkpoint(&mut self, mut checkpoint: Checkpoint) {
+        checkpoint.graph_path = validated_graph_path(&checkpoint.document, &checkpoint.graph_path);
+        checkpoint.selection.retain(|id| {
+            checkpoint
+                .document
+                .object_at_path(&checkpoint.graph_path, *id)
+                .is_some()
+        });
+        let view = checkpoint
+            .document
+            .view_at_path(&checkpoint.graph_path)
+            .unwrap_or_default();
+        let cache = build_image_cache(&checkpoint.document);
+        self.doc.set(checkpoint.document);
+        self.current_graph_path.set(checkpoint.graph_path);
+        self.selected.set(checkpoint.selection);
+        self.pan.set(view.pan());
+        self.zoom.set(view.zoom);
+        self.image_cache.set(cache);
+        self.editing_note.set(None);
+        self.editing_subgraph.set(None);
+        self.drag.set(DragState::None);
+        self.live_points.set(Vec::new());
+        self.drop_target.set(None);
+        self.context_menu.set(None);
+        self.menu_open.set(false);
+        self.shot_mode.set(false);
+        self.pending_shot.set(None);
+        self.transaction_kind.set(None);
+        let next_sequence = *self.wheel_sequence.peek() + 1;
+        self.wheel_sequence.set(next_sequence);
+        self.invalidate_async_operations();
+        self.tool.set(Tool::Select);
+        self.focus_canvas();
     }
 
     /// Return keyboard focus to the canvas viewport (e.g. after clicking an
@@ -293,9 +543,11 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        self.doc
-            .write()
-            .move_object_up_at_path(&menu.source_path, menu.id);
+        let path = menu.source_path.clone();
+        let id = menu.id;
+        self.edit_document(move |doc| {
+            doc.move_object_up_at_path(&path, id);
+        });
         self.close_context_menu();
     }
 
@@ -303,9 +555,11 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        self.doc
-            .write()
-            .move_object_to_top_at_path(&menu.source_path, menu.id);
+        let path = menu.source_path.clone();
+        let id = menu.id;
+        self.edit_document(move |doc| {
+            doc.move_object_to_top_at_path(&path, id);
+        });
         self.close_context_menu();
     }
 
@@ -313,9 +567,11 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        self.doc
-            .write()
-            .move_object_down_at_path(&menu.source_path, menu.id);
+        let path = menu.source_path.clone();
+        let id = menu.id;
+        self.edit_document(move |doc| {
+            doc.move_object_down_at_path(&path, id);
+        });
         self.close_context_menu();
     }
 
@@ -323,9 +579,11 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        self.doc
-            .write()
-            .move_object_to_bottom_at_path(&menu.source_path, menu.id);
+        let path = menu.source_path.clone();
+        let id = menu.id;
+        self.edit_document(move |doc| {
+            doc.move_object_to_bottom_at_path(&path, id);
+        });
         self.close_context_menu();
     }
 
@@ -346,23 +604,28 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        if let Some(obj) = self
-            .doc
-            .write()
-            .object_at_path_mut(&menu.source_path, menu.id)
-        {
-            obj.opacity_override = None;
-        }
+        let path = menu.source_path;
+        let id = menu.id;
+        self.edit_document(move |doc| {
+            if let Some(obj) = doc.object_at_path_mut(&path, id) {
+                obj.opacity_override = None;
+            }
+        });
     }
 
     /// Enter the region screenshot flow.
     pub fn start_region_screenshot(&mut self) {
+        self.commit_transaction();
         let Some(game_hwnd) = self.game_hwnd else {
             self.show_toast("Screenshots are only available in overlay mode");
             return;
         };
 
-        self.cancel_region_screenshot();
+        self.shot_mode.set(false);
+        self.pending_shot.set(None);
+        self.invalidate_async_operations();
+        let origin = self.async_operation_origin();
+        let task_origin = origin.clone();
         let mut state = *self;
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -373,10 +636,14 @@ impl EditorState {
                     height: img.height(),
                     data_url: png_data_url(&png),
                     png,
+                    origin: task_origin,
                 })
             })
             .await;
 
+            if !state.operation_context_is_current(&origin) {
+                return;
+            }
             match result {
                 Ok(Ok(shot)) => {
                     if state.host == EditorHost::Overlay {
@@ -396,9 +663,18 @@ impl EditorState {
     pub fn cancel_region_screenshot(&mut self) {
         self.shot_mode.set(false);
         self.pending_shot.set(None);
+        self.invalidate_async_operations();
+    }
+
+    /// Remove the crop overlay without invalidating the crop operation that is
+    /// about to finish asynchronously.
+    pub fn take_pending_screenshot(&mut self) -> Option<PendingScreenshot> {
+        self.shot_mode.set(false);
+        self.pending_shot.write().take()
     }
 
     pub fn return_to_overview(&mut self) {
+        self.commit_transaction();
         self.deselect();
         self.menu_open.set(false);
         self.cancel_region_screenshot();
@@ -415,6 +691,7 @@ impl EditorState {
         if self.host != EditorHost::Overlay {
             return;
         }
+        self.commit_transaction();
         let doc = self.doc.peek().clone();
         let game_exe = doc.game_exe.clone();
         let doc_id = doc.id.clone();
@@ -430,10 +707,12 @@ impl EditorState {
 
     pub fn add_note(&mut self, wx: f64, wy: f64) {
         let path = self.current_graph_path.read().clone();
+        self.begin_transaction(TransactionKind::Gesture);
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
         let Some(objects) = doc.objects_at_path_mut(&path) else {
             drop(doc);
+            self.cancel_transaction();
             self.current_graph_path.set(Vec::new());
             self.show_toast("Could not create note in this subgraph");
             return;
@@ -453,6 +732,7 @@ impl EditorState {
             },
         });
         drop(doc);
+        self.commit_transaction();
         self.selected.set(vec![id]);
         self.editing_note.set(Some(id));
         self.editing_subgraph.set(None);
@@ -461,10 +741,12 @@ impl EditorState {
 
     pub fn add_subgraph(&mut self, wx: f64, wy: f64) {
         let path = self.current_graph_path.read().clone();
+        self.begin_transaction(TransactionKind::Gesture);
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
         let Some(objects) = doc.objects_at_path_mut(&path) else {
             drop(doc);
+            self.cancel_transaction();
             self.current_graph_path.set(Vec::new());
             self.show_toast("Could not create subgraph here");
             return;
@@ -485,6 +767,7 @@ impl EditorState {
             },
         });
         drop(doc);
+        self.commit_transaction();
         self.selected.set(vec![id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(Some(id));
@@ -516,10 +799,12 @@ impl EditorState {
         let rel: Vec<[f64; 2]> = points.iter().map(|p| [p[0] - x, p[1] - y]).collect();
 
         let path = self.current_graph_path.read().clone();
+        self.begin_transaction(TransactionKind::Gesture);
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
         let Some(objects) = doc.objects_at_path_mut(&path) else {
             drop(doc);
+            self.cancel_transaction();
             self.current_graph_path.set(Vec::new());
             self.show_toast("Could not finish drawing in this subgraph");
             return;
@@ -540,15 +825,33 @@ impl EditorState {
                 stroke_width: width,
             },
         });
+        drop(doc);
+        self.commit_transaction();
     }
 
-    /// Insert PNG bytes as an image object centered on the given world point.
-    pub fn add_image_png(&mut self, png_bytes: &[u8], wx: f64, wy: f64) {
+    /// Insert PNG bytes at the exact graph/world position captured when the
+    /// asynchronous operation started. Stale completions are ignored.
+    pub fn add_image_png_at(
+        &mut self,
+        origin: &AsyncOperationOrigin,
+        coords: (f64, f64),
+        png_bytes: &[u8],
+    ) -> bool {
+        if !self.operation_context_is_current(origin)
+            || self
+                .doc
+                .peek()
+                .objects_at_path(&origin.graph_path)
+                .is_none()
+        {
+            return false;
+        }
+
         let (iw, ih) = match image::load_from_memory(png_bytes) {
             Ok(img) => (img.width() as f64, img.height() as f64),
             Err(_) => {
                 self.show_toast("Could not decode image");
-                return;
+                return false;
             }
         };
 
@@ -559,7 +862,7 @@ impl EditorState {
                 Err(e) => {
                     drop(doc);
                     self.show_toast(&format!("Failed to save image: {e}"));
-                    return;
+                    return false;
                 }
             }
         };
@@ -568,28 +871,20 @@ impl EditorState {
         let scale = (480.0 / iw).min(360.0 / ih).min(1.0);
         let w = (iw * scale).max(40.0);
         let h = (ih * scale).max(30.0);
+        let url = png_data_url(png_bytes);
 
-        let url = {
-            use base64::Engine;
-            format!(
-                "data:image/png;base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(png_bytes)
-            )
-        };
-
-        let path = self.current_graph_path.read().clone();
+        self.begin_transaction(TransactionKind::Gesture);
         let mut doc = self.doc.write();
         let id = doc.alloc_object_id();
-        let Some(objects) = doc.objects_at_path_mut(&path) else {
+        let Some(objects) = doc.objects_at_path_mut(&origin.graph_path) else {
             drop(doc);
-            self.current_graph_path.set(Vec::new());
-            self.show_toast("Could not add image in this subgraph");
-            return;
+            self.cancel_transaction();
+            return false;
         };
         objects.push(CanvasObject {
             id,
-            x: wx - w / 2.0,
-            y: wy - h / 2.0,
+            x: coords.0 - w / 2.0,
+            y: coords.1 - h / 2.0,
             w,
             h,
             rotation: 0.0,
@@ -597,22 +892,28 @@ impl EditorState {
             kind: ObjectKind::Image { file },
         });
         drop(doc);
+        self.commit_transaction();
         self.image_cache.write().insert(id, url);
         self.selected.set(vec![id]);
         self.editing_note.set(None);
         self.editing_subgraph.set(None);
+        true
     }
 
-    /// Paste an image from the system clipboard into the canvas center.
+    /// Paste an image into the canvas center as it existed when paste began.
     pub fn paste_image_from_clipboard(&mut self) {
+        let origin = self.async_operation_origin();
+        let (vw, vh) = viewport_size();
+        let coords = self.screen_to_world(vw / 2.0, vh / 2.0);
         let mut state = *self;
         spawn(async move {
             let result = tokio::task::spawn_blocking(read_clipboard_png).await;
+            if !state.operation_context_is_current(&origin) {
+                return;
+            }
             match result {
                 Ok(Ok(png)) => {
-                    let (vw, vh) = viewport_size();
-                    let (wx, wy) = state.screen_to_world(vw / 2.0, vh / 2.0);
-                    state.add_image_png(&png, wx, wy);
+                    state.add_image_png_at(&origin, coords, &png);
                 }
                 Ok(Err(e)) => state.show_toast(&e),
                 Err(_) => state.show_toast("Clipboard read failed"),
@@ -623,6 +924,7 @@ impl EditorState {
     pub fn delete_selected(&mut self) {
         let selected = self.selected.read().clone();
         if !selected.is_empty() {
+            self.begin_transaction(TransactionKind::Gesture);
             let path = self.current_graph_path.read().clone();
             let mut removed_objects = Vec::new();
             {
@@ -642,10 +944,12 @@ impl EditorState {
                 }
             }
             self.deselect();
+            self.commit_transaction();
         }
     }
 
     pub fn enter_subgraph(&mut self, id: u64) {
+        self.commit_transaction();
         self.persist_current_graph_view();
         let path = self.current_graph_path.read().clone();
         if !matches!(
@@ -658,6 +962,7 @@ impl EditorState {
         next.push(id);
         self.current_graph_path.set(next);
         self.restore_graph_view();
+        self.focus_canvas();
     }
 
     pub fn rename_selected_subgraph(&mut self) {
@@ -689,8 +994,10 @@ impl EditorState {
             self.close_context_menu();
             return;
         }
+        self.commit_transaction();
         self.persist_current_graph_view();
         self.current_graph_path.set(menu.source_path.clone());
+        self.invalidate_async_operations();
         self.load_current_graph_view();
         self.selected.set(vec![menu.id]);
         self.editing_note.set(None);
@@ -703,10 +1010,11 @@ impl EditorState {
         let Some(menu) = self.context_menu.read().clone() else {
             return;
         };
-        let moved = self
-            .doc
-            .write()
-            .move_object_to_graph(&menu.source_path, menu.id, &target_path);
+        let id = menu.id;
+        let source_path = menu.source_path.clone();
+        let moved = self.edit_document(move |doc| {
+            doc.move_object_to_graph(&source_path, id, &target_path);
+        });
         self.close_context_menu();
         if moved {
             if self.selected.read().contains(&menu.id) {
@@ -718,14 +1026,17 @@ impl EditorState {
     }
 
     pub fn navigate_to_graph_depth(&mut self, depth: usize) {
+        self.commit_transaction();
         self.persist_current_graph_view();
         let mut path = self.current_graph_path.read().clone();
         path.truncate(depth);
         self.current_graph_path.set(path);
         self.restore_graph_view();
+        self.focus_canvas();
     }
 
     fn restore_graph_view(&mut self) {
+        self.invalidate_async_operations();
         self.deselect();
         self.drag.set(DragState::None);
         self.drop_target.set(None);
@@ -828,6 +1139,7 @@ impl EditorState {
     pub fn load_document(&mut self, doc_id: &str) {
         let game_exe = self.doc.read().game_exe.clone();
         // Persist current before switching.
+        self.commit_transaction();
         self.persist_current_graph_view();
         let _ = store::save_document(&self.doc.read());
         let Some(new_doc) = store::load_document(&game_exe, doc_id) else {
@@ -837,7 +1149,19 @@ impl EditorState {
         let cache = build_image_cache(&new_doc);
         self.image_cache.set(cache);
         self.doc.set(new_doc);
+        self.history.write().clear();
+        self.transaction_kind.set(None);
+        let next_sequence = *self.wheel_sequence.peek() + 1;
+        self.wheel_sequence.set(next_sequence);
+        self.invalidate_async_operations();
         self.current_graph_path.set(Vec::new());
+        self.drag.set(DragState::None);
+        self.live_points.set(Vec::new());
+        self.drop_target.set(None);
+        self.context_menu.set(None);
+        self.menu_open.set(false);
+        self.shot_mode.set(false);
+        self.pending_shot.set(None);
         self.deselect();
         self.load_current_graph_view();
     }
@@ -889,10 +1213,84 @@ fn viewport_size() -> (f64, f64) {
     (size.width as f64 / scale, size.height as f64 / scale)
 }
 
+#[cfg(test)]
+mod shortcut_tests {
+    use super::{
+        AsyncOperationOrigin, HistoryShortcut, history_shortcut, operation_context_matches,
+        validated_graph_path,
+    };
+    use crate::store::{CanvasObject, Document, GraphView, ObjectKind};
+    use dioxus::prelude::Key;
+
+    #[test]
+    fn recognizes_standard_history_shortcuts() {
+        assert_eq!(
+            history_shortcut(&Key::Character("z".into()), true, false),
+            Some(HistoryShortcut::Undo)
+        );
+        assert_eq!(
+            history_shortcut(&Key::Character("Z".into()), true, true),
+            Some(HistoryShortcut::Redo)
+        );
+        assert_eq!(
+            history_shortcut(&Key::Character("y".into()), true, false),
+            Some(HistoryShortcut::Redo)
+        );
+    }
+
+    #[test]
+    fn ignores_unmodified_or_unrelated_keys() {
+        assert_eq!(
+            history_shortcut(&Key::Character("z".into()), false, false),
+            None
+        );
+        assert_eq!(
+            history_shortcut(&Key::Character("x".into()), true, false),
+            None
+        );
+    }
+
+    #[test]
+    fn async_completion_requires_exact_document_path_and_generation() {
+        let origin = AsyncOperationOrigin {
+            document_id: "doc-a".into(),
+            graph_path: vec![7, 9],
+            generation: 3,
+        };
+        assert!(operation_context_matches(&origin, "doc-a", &[7, 9], 3));
+        assert!(!operation_context_matches(&origin, "doc-b", &[7, 9], 3));
+        assert!(!operation_context_matches(&origin, "doc-a", &[7], 3));
+        assert!(!operation_context_matches(&origin, "doc-a", &[7, 9], 4));
+    }
+
+    #[test]
+    fn graph_path_validation_falls_back_to_deepest_existing_parent() {
+        let mut document = Document::new("game.exe", "paths");
+        document.objects.push(CanvasObject {
+            id: 7,
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+            rotation: 0.0,
+            opacity_override: None,
+            kind: ObjectKind::Subgraph {
+                name: "valid".into(),
+                color: "orange".into(),
+                view: GraphView::default(),
+                objects: Vec::new(),
+            },
+        });
+        assert_eq!(validated_graph_path(&document, &[7]), vec![7]);
+        assert_eq!(validated_graph_path(&document, &[7, 99]), vec![7]);
+        assert!(validated_graph_path(&document, &[99]).is_empty());
+    }
+}
+
 /// The shared editor surface. Expects an [`EditorState`] in context.
 #[component]
 pub fn Editor() -> Element {
-    let state = use_context::<EditorState>();
+    let mut state = use_context::<EditorState>();
 
     // Debounced autosave whenever the document changes.
     let doc = state.doc;
@@ -938,6 +1336,9 @@ pub fn Editor() -> Element {
         div {
             class: "editor-root {host_class} {mode_class}",
             style: "opacity: {opacity};",
+            onkeydown: move |evt| {
+                handle_history_shortcut(&evt, &mut state);
+            },
             canvas::Canvas {}
             if edit && !shot_active {
                 chrome::Toolbar {}
