@@ -682,20 +682,6 @@ input[type="text"].subgraph-name-input {
   color: var(--accent);
 }
 
-.tool-btn:disabled,
-.tool-btn:disabled:hover {
-  color: rgba(203, 210, 224, 0.28);
-  background: transparent;
-  cursor: default;
-}
-
-.toolbar-divider {
-  width: 30px;
-  height: 1px;
-  margin: 2px auto;
-  background: var(--border);
-}
-
 .has-tooltip {
   position: relative;
 }

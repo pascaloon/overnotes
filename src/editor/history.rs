@@ -64,16 +64,19 @@ impl History {
         }
     }
 
+    #[cfg(test)]
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
 
+    #[cfg(test)]
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
 
+    #[cfg(test)]
     /// Whether undo would restore a different checkpoint. An untouched active
-    /// transaction does not make the Undo button appear enabled.
+    /// transaction does not make undo appear available.
     pub fn can_undo_from(&self, current: &Checkpoint) -> bool {
         self.pending
             .as_ref()

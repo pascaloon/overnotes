@@ -14,40 +14,9 @@ pub fn Toolbar() -> Element {
     let draw_active = tool == Tool::Draw;
     let stroke_color = state.stroke_color.read().clone();
     let stroke_width = *state.stroke_width.read();
-    let can_undo = state.can_undo();
-    let can_redo = state.can_redo();
 
     rsx! {
         div { class: "toolbar",
-            button {
-                class: "tool-btn has-tooltip history-btn",
-                aria_label: "Undo (Ctrl+Z)",
-                disabled: !can_undo,
-                onclick: move |_| {
-                    state.undo();
-                    state.focus_canvas();
-                },
-                svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
-                    stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                    path { d: "M9 7 L4 12 L9 17" }
-                    path { d: "M5 12 H14 A6 6 0 0 1 20 18" }
-                }
-            }
-            button {
-                class: "tool-btn has-tooltip history-btn",
-                aria_label: "Redo (Ctrl+Y / Ctrl+Shift+Z)",
-                disabled: !can_redo,
-                onclick: move |_| {
-                    state.redo();
-                    state.focus_canvas();
-                },
-                svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
-                    stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                    path { d: "M15 7 L20 12 L15 17" }
-                    path { d: "M19 12 H10 A6 6 0 0 0 4 18" }
-                }
-            }
-            div { class: "toolbar-divider" }
             button {
                 class: "tool-btn",
                 class: "has-tooltip",

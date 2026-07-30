@@ -360,14 +360,6 @@ impl EditorState {
         self.history.write().commit(&after)
     }
 
-    pub fn can_undo(&self) -> bool {
-        self.history.read().can_undo_from(&self.checkpoint())
-    }
-
-    pub fn can_redo(&self) -> bool {
-        self.history.read().can_redo()
-    }
-
     pub fn undo(&mut self) {
         self.commit_transaction();
         let current = self.checkpoint();
