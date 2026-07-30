@@ -706,8 +706,16 @@ input[type="text"].subgraph-name-input {
   transition: opacity 0.1s ease;
 }
 
-.has-tooltip:hover::after {
+.has-tooltip:hover::after,
+.has-tooltip:focus-visible::after {
   opacity: 1;
+}
+
+button:focus-visible,
+.crumb:focus-visible,
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .toolbar .has-tooltip::after,

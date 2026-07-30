@@ -3,7 +3,7 @@
 
 use dioxus::prelude::*;
 
-use super::{EditorHost, EditorState, Tool};
+use super::{EditorHost, EditorState, Tool, TransactionKind};
 use crate::store::{self, KeyboardShortcut, ObjectKind, STROKE_COLORS};
 
 #[component]
@@ -22,7 +22,10 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Select { "active" },
                 aria_label: "Select / move (Esc)",
-                onclick: move |_| state.activate_tool(Tool::Select),
+                onclick: move |_| {
+                    state.activate_tool(Tool::Select);
+                    state.focus_canvas();
+                },
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M5 3 L19 12 L12 13.5 L9.5 20 Z" }
@@ -33,7 +36,10 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Note { "active" },
                 aria_label: "Add note",
-                onclick: move |_| state.activate_tool(Tool::Note),
+                onclick: move |_| {
+                    state.activate_tool(Tool::Note);
+                    state.focus_canvas();
+                },
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M4 4 H20 V14 L14 20 H4 Z" }
@@ -45,7 +51,10 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if tool == Tool::Subgraph { "active" },
                 aria_label: "Add subgraph",
-                onclick: move |_| state.activate_tool(Tool::Subgraph),
+                onclick: move |_| {
+                    state.activate_tool(Tool::Subgraph);
+                    state.focus_canvas();
+                },
                 svg { width: "22", height: "22", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M3 7 H9 L11 10 H21 V19 H3 Z" }
@@ -57,7 +66,10 @@ pub fn Toolbar() -> Element {
                 class: "has-tooltip",
                 class: if draw_active { "active" },
                 aria_label: "Draw",
-                onclick: move |_| state.activate_tool(Tool::Draw),
+                onclick: move |_| {
+                    state.activate_tool(Tool::Draw);
+                    state.focus_canvas();
+                },
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     path { d: "M4 20 L5 15.5 L16.5 4 L20 7.5 L8.5 19 Z" }
@@ -67,7 +79,10 @@ pub fn Toolbar() -> Element {
                 class: "tool-btn",
                 class: "has-tooltip",
                 aria_label: "Paste image from clipboard (Ctrl+V)",
-                onclick: move |_| state.paste_image_from_clipboard(),
+                onclick: move |_| {
+                    state.paste_image_from_clipboard();
+                    state.focus_canvas();
+                },
                 svg { width: "20", height: "20", view_box: "0 0 24 24", fill: "none",
                     stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
                     rect { x: "3", y: "4", width: "18", height: "16", rx: "2" }
@@ -263,11 +278,18 @@ pub fn ObjectContextMenu() -> Element {
                         max: "1",
                         step: "0.05",
                         value: "{object_opacity}",
+                        onmousedown: move |_| {
+                            state.begin_transaction(TransactionKind::ObjectOpacity(menu.id));
+                        },
                         oninput: move |evt| {
+                            state.begin_transaction(TransactionKind::ObjectOpacity(menu.id));
                             if let Ok(v) = evt.value().parse::<f64>() {
                                 state.set_context_object_opacity(v);
                             }
                         },
+                        onmouseup: move |_| { state.commit_transaction(); },
+                        onblur: move |_| { state.commit_transaction(); },
+                        onchange: move |_| { state.commit_transaction(); },
                     }
                     if !uses_default_opacity {
                         button {
@@ -357,8 +379,18 @@ pub fn MainMenu() -> Element {
                     input {
                         r#type: "text",
                         value: "{doc_name}",
+                        onfocus: move |_| state.begin_transaction(TransactionKind::DocumentName),
                         oninput: move |evt| {
+                            state.begin_transaction(TransactionKind::DocumentName);
                             state.doc.write().name = evt.value();
+                        },
+                        onblur: move |_| { state.commit_transaction(); },
+                        onkeydown: move |evt| {
+                            if matches!(evt.key(), Key::Enter | Key::Escape) {
+                                evt.stop_propagation();
+                                state.commit_transaction();
+                                state.focus_canvas();
+                            }
                         },
                     }
                 }
@@ -390,11 +422,16 @@ pub fn MainMenu() -> Element {
                         max: "1",
                         step: "0.05",
                         value: "{overview_opacity}",
+                        onmousedown: move |_| state.begin_transaction(TransactionKind::OverviewOpacity),
                         oninput: move |evt| {
+                            state.begin_transaction(TransactionKind::OverviewOpacity);
                             if let Ok(v) = evt.value().parse::<f64>() {
                                 state.doc.write().overview_opacity = v;
                             }
                         },
+                        onmouseup: move |_| { state.commit_transaction(); },
+                        onblur: move |_| { state.commit_transaction(); },
+                        onchange: move |_| { state.commit_transaction(); },
                     }
                     span { class: "slider-value", "{(overview_opacity * 100.0):.0}%" }
                 }
@@ -407,11 +444,16 @@ pub fn MainMenu() -> Element {
                         max: "1",
                         step: "0.05",
                         value: "{edit_opacity}",
+                        onmousedown: move |_| state.begin_transaction(TransactionKind::EditOpacity),
                         oninput: move |evt| {
+                            state.begin_transaction(TransactionKind::EditOpacity);
                             if let Ok(v) = evt.value().parse::<f64>() {
                                 state.doc.write().edit_opacity = v;
                             }
                         },
+                        onmouseup: move |_| { state.commit_transaction(); },
+                        onblur: move |_| { state.commit_transaction(); },
+                        onchange: move |_| { state.commit_transaction(); },
                     }
                     span { class: "slider-value", "{(edit_opacity * 100.0):.0}%" }
                 }
@@ -770,11 +812,14 @@ pub fn ShotOverlay() -> Element {
                     state.cancel_region_screenshot();
                     return;
                 }
-                let Some(shot) = state.pending_shot.peek().clone() else {
+                let Some(shot) = state.take_pending_screenshot() else {
                     state.cancel_region_screenshot();
                     return;
                 };
-                state.cancel_region_screenshot();
+                let origin = shot.origin.clone();
+                if !state.operation_context_is_current(&origin) {
+                    return;
+                }
                 let win = dioxus::desktop::window();
                 let size = win.inner_size();
                 let scale = win.scale_factor();
@@ -796,9 +841,16 @@ pub fn ShotOverlay() -> Element {
                     })
                     .await;
                     match result {
-                        Ok(Ok(png)) => st.add_image_png(&png, wx, wy),
-                        Ok(Err(e)) => st.show_toast(&format!("Capture failed: {e}")),
-                        Err(_) => st.show_toast("Capture failed"),
+                        Ok(Ok(png)) => {
+                            st.add_image_png_at(&origin, (wx, wy), &png);
+                        }
+                        Ok(Err(e)) if st.operation_context_is_current(&origin) => {
+                            st.show_toast(&format!("Capture failed: {e}"));
+                        }
+                        Err(_) if st.operation_context_is_current(&origin) => {
+                            st.show_toast("Capture failed");
+                        }
+                        _ => {}
                     }
                 });
             },
