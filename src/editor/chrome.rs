@@ -696,6 +696,7 @@ pub fn BottomBar() -> Element {
     } else {
         "Hide overview overlay"
     };
+    let mut more_menu_open = use_signal(|| false);
 
     let can_screenshot = state.game_hwnd.is_some();
 
@@ -707,6 +708,7 @@ pub fn BottomBar() -> Element {
                     class: "has-tooltip",
                     aria_label: "Capture the game, then crop it ({screenshot_label})",
                     onclick: move |_| {
+                        more_menu_open.set(false);
                         state.start_region_screenshot();
                     },
                     svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
@@ -724,6 +726,7 @@ pub fn BottomBar() -> Element {
                 class: if overview_hidden { "active" },
                 aria_label: "{hide_tooltip}",
                 onclick: move |_| {
+                    more_menu_open.set(false);
                     state.toggle_overview_hidden();
                 },
                 svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
@@ -742,26 +745,11 @@ pub fn BottomBar() -> Element {
                 "{hide_label}"
             }
             button {
-                class: "bar-btn",
-                class: "has-tooltip",
-                aria_label: "Detach overlay into a standalone window",
-                onclick: move |_| {
-                    state.detach_overlay();
-                },
-                svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
-                    stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
-                    stroke_linejoin: "round",
-                    path { d: "M14 4 H20 V10" }
-                    path { d: "M20 4 L10 14" }
-                    path { d: "M10 6 H6 A2 2 0 0 0 4 8 V18 A2 2 0 0 0 6 20 H16 A2 2 0 0 0 18 18 V14" }
-                }
-                "Detach"
-            }
-            button {
                 class: "bar-btn danger",
                 class: "has-tooltip",
                 aria_label: "Back to overview ({toggle_label})",
                 onclick: move |_| {
+                    more_menu_open.set(false);
                     state.return_to_overview();
                 },
                 svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
@@ -769,6 +757,62 @@ pub fn BottomBar() -> Element {
                     path { d: "M6 6 L18 18 M18 6 L6 18" }
                 }
                 "Close"
+            }
+            div { class: "bar-more",
+                button {
+                    class: "bar-btn bar-more-caret",
+                    class: if *more_menu_open.read() { "active" },
+                    class: "has-tooltip",
+                    aria_label: "More overlay actions",
+                    aria_expanded: (*more_menu_open.read()).to_string(),
+                    onclick: move |_| {
+                        let next = !*more_menu_open.peek();
+                        more_menu_open.set(next);
+                    },
+                    svg { width: "12", height: "12", view_box: "0 0 24 24", fill: "none",
+                        stroke: "currentColor", stroke_width: "2.5", stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M6 9 L12 15 L18 9" }
+                    }
+                }
+                if *more_menu_open.read() {
+                    div { class: "bar-menu",
+                        button {
+                            class: "bar-menu-item",
+                            class: "has-tooltip",
+                            aria_label: "Detach overlay into a standalone window",
+                            onclick: move |_| {
+                                more_menu_open.set(false);
+                                state.detach_overlay();
+                            },
+                            svg { width: "16", height: "16", view_box: "0 0 24 24", fill: "none",
+                                stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M14 4 H20 V10" }
+                                path { d: "M20 4 L10 14" }
+                                path { d: "M10 6 H6 A2 2 0 0 0 4 8 V18 A2 2 0 0 0 6 20 H16 A2 2 0 0 0 18 18 V14" }
+                            }
+                            "Detach"
+                        }
+                        button {
+                            class: "bar-menu-item danger",
+                            class: "has-tooltip",
+                            aria_label: "Save and close the overlay",
+                            onclick: move |_| {
+                                more_menu_open.set(false);
+                                state.quit_overlay();
+                            },
+                            svg { width: "16", height: "16", view_box: "0 0 24 24", fill: "none",
+                                stroke: "currentColor", stroke_width: "2", stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M18 20 V6 A2 2 0 0 0 16 4 H8 A2 2 0 0 0 6 6 V20" }
+                                path { d: "M2 20 H22" }
+                                circle { cx: "14", cy: "12", r: "1" }
+                            }
+                            "Quit"
+                        }
+                    }
+                }
             }
         }
     }

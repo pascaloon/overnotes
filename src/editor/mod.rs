@@ -707,6 +707,16 @@ impl EditorState {
         dioxus::desktop::window().close();
     }
 
+    /// Save and close the overlay without opening a standalone window.
+    pub fn quit_overlay(&mut self) {
+        if self.host != EditorHost::Overlay {
+            return;
+        }
+        self.commit_transaction();
+        let _ = store::save_document(&self.doc.peek());
+        dioxus::desktop::window().close();
+    }
+
     pub fn add_note(&mut self, wx: f64, wy: f64) {
         let path = self.current_graph_path.read().clone();
         self.begin_transaction(TransactionKind::Gesture);
@@ -1359,7 +1369,7 @@ pub fn Editor() -> Element {
 
     let edit = state.is_edit_mode();
     let shot_active = *state.shot_mode.read();
-    let opacity = match state.host {
+    let canvas_opacity = match state.host {
         EditorHost::Standalone => 1.0,
         EditorHost::Overlay => {
             let d = state.doc.read();
@@ -1394,11 +1404,14 @@ pub fn Editor() -> Element {
     rsx! {
         div {
             class: "editor-root {host_class} {mode_class}",
-            style: "opacity: {opacity};",
             onkeydown: move |evt| {
                 handle_history_shortcut(&evt, &mut state);
             },
-            canvas::Canvas {}
+            div {
+                class: "editor-canvas-layer",
+                style: "opacity: {canvas_opacity};",
+                canvas::Canvas {}
+            }
             if edit && !shot_active {
                 div {
                     class: "chrome-stage",
