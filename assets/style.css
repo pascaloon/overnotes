@@ -272,6 +272,13 @@ input[type="range"] {
   transform: translateY(-50%);
 }
 
+/* Column header tooltips open downward so they aren't clipped by overflow:hidden. */
+.col-head .icon-btn.has-tooltip::after {
+  right: 0;
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
 .list-empty {
   color: var(--text-dim);
   text-align: center;
