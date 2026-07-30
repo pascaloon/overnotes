@@ -18,6 +18,8 @@ pub fn Launcher() -> Element {
     let mut overlay_ctx = use_signal(|| None::<WeakDesktopContext>);
     let mut attached_to = use_signal(|| None::<(String, String, String)>); // (game title, exe, doc id)
     let mut status = use_signal(String::new);
+    // Doc id awaiting a second delete click for confirmation.
+    let mut confirm_delete = use_signal(|| None::<String>);
 
     // Poll whether the overlay window is still alive so the "Attached"
     // indicator and Detach button stay truthful.
@@ -41,6 +43,41 @@ pub fn Launcher() -> Element {
     let mut refresh_docs = move |game: &process::GameWindow| {
         docs.set(store::list_documents(&game.exe));
         selected_doc.set(None);
+        confirm_delete.set(None);
+    };
+
+    let mut delete_doc = move |doc_id: String| {
+        let Some(game) = selected_game.peek().clone() else {
+            return;
+        };
+        if attached_to
+            .peek()
+            .as_ref()
+            .is_some_and(|(_, _, id)| id == &doc_id)
+        {
+            status.set("Detach the overlay before deleting this document".into());
+            confirm_delete.set(None);
+            return;
+        }
+        if confirm_delete.peek().as_deref() != Some(doc_id.as_str()) {
+            confirm_delete.set(Some(doc_id));
+            status.set("Click delete again to confirm".into());
+            return;
+        }
+        match store::delete_document(&game.exe, &doc_id) {
+            Ok(()) => {
+                if selected_doc.peek().as_deref() == Some(doc_id.as_str()) {
+                    selected_doc.set(None);
+                }
+                confirm_delete.set(None);
+                docs.set(store::list_documents(&game.exe));
+                status.set("Document deleted".into());
+            }
+            Err(e) => {
+                confirm_delete.set(None);
+                status.set(format!("Failed to delete document: {e}"));
+            }
+        }
     };
 
     // Resolve the document to open: the selected one, or a new one named
@@ -149,6 +186,7 @@ pub fn Launcher() -> Element {
     let attached = attached_to.read().clone();
     let status_text = status.read().clone();
     let new_name = new_doc_name.read().clone();
+    let pending_delete = confirm_delete.read().clone();
 
     rsx! {
         document::Stylesheet { href: asset!("/assets/style.css") }
@@ -214,13 +252,49 @@ pub fn Launcher() -> Element {
                         }
                         for meta in doc_list {
                             div {
-                                class: "list-item",
+                                class: "list-item doc-item",
                                 class: if selected_doc_id.as_deref() == Some(meta.id.as_str()) { "selected" },
+                                class: if pending_delete.as_deref() == Some(meta.id.as_str()) { "confirm-delete" },
                                 onclick: {
                                     let id = meta.id.clone();
-                                    move |_| selected_doc.set(Some(id.clone()))
+                                    move |_| {
+                                        confirm_delete.set(None);
+                                        selected_doc.set(Some(id.clone()));
+                                    }
                                 },
                                 span { class: "title", "{meta.name}" }
+                                button {
+                                    class: "icon-btn delete-btn",
+                                    class: "has-tooltip",
+                                    class: if pending_delete.as_deref() == Some(meta.id.as_str()) { "confirm" },
+                                    aria_label: if pending_delete.as_deref() == Some(meta.id.as_str()) {
+                                        "Confirm delete"
+                                    } else {
+                                        "Delete document"
+                                    },
+                                    onclick: {
+                                        let id = meta.id.clone();
+                                        move |evt| {
+                                            evt.stop_propagation();
+                                            delete_doc(id.clone());
+                                        }
+                                    },
+                                    svg {
+                                        width: "15",
+                                        height: "15",
+                                        view_box: "0 0 24 24",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        stroke_width: "2",
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        path { d: "M3 6h18" }
+                                        path { d: "M8 6V4h8v2" }
+                                        path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }
+                                        path { d: "M10 11v6" }
+                                        path { d: "M14 11v6" }
+                                    }
+                                }
                             }
                         }
                     }

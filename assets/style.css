@@ -232,6 +232,46 @@ input[type="range"] {
   text-overflow: ellipsis;
 }
 
+.list-item.doc-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-item.doc-item .title {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-item .delete-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  width: 26px;
+  height: 26px;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.list-item:hover .delete-btn,
+.list-item.selected .delete-btn,
+.list-item.confirm-delete .delete-btn,
+.list-item .delete-btn:focus-visible {
+  opacity: 1;
+}
+
+.list-item .delete-btn:hover,
+.list-item .delete-btn.confirm {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.14);
+}
+
+/* Keep tooltips inside the scrollable list (above would clip under the header). */
+.list-item .delete-btn.has-tooltip::after {
+  right: calc(100% + 8px);
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .list-empty {
   color: var(--text-dim);
   text-align: center;

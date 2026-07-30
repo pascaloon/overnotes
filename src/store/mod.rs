@@ -595,6 +595,21 @@ pub fn save_document(doc: &Document) -> std::io::Result<()> {
     std::fs::write(dir.join("doc.json"), json)
 }
 
+/// Permanently remove a document folder (JSON + image assets).
+pub fn delete_document(game_exe: &str, doc_id: &str) -> std::io::Result<()> {
+    if doc_id.is_empty() || doc_id.contains(['/', '\\']) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid document id",
+        ));
+    }
+    let dir = doc_dir(game_exe, doc_id);
+    if !dir.exists() {
+        return Ok(());
+    }
+    std::fs::remove_dir_all(dir)
+}
+
 /// Save PNG bytes as an asset of the document, returning the stored filename.
 pub fn save_image_asset(doc: &Document, png_bytes: &[u8]) -> std::io::Result<String> {
     let dir = doc_dir(&doc.game_exe, &doc.id);
