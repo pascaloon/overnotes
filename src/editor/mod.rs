@@ -223,6 +223,10 @@ pub struct EditorState {
     pub wheel_sequence: Signal<u64>,
     /// Invalidates asynchronous image/capture work when its editor context changes.
     pub operation_generation: Signal<u64>,
+    /// Desktop overlay: chrome is confined to this monitor rect (CSS px).
+    pub chrome_bounds: Signal<Option<crate::platform::display::ChromeBounds>>,
+    /// Desktop overlay: chrome is mid fade-out/in while switching monitors.
+    pub chrome_fading: Signal<bool>,
 }
 
 impl EditorState {
@@ -259,7 +263,13 @@ impl EditorState {
             transaction_kind: Signal::new(None),
             wheel_sequence: Signal::new(0),
             operation_generation: Signal::new(0),
+            chrome_bounds: Signal::new(None),
+            chrome_fading: Signal::new(false),
         }
+    }
+
+    pub fn is_desktop_overlay(self) -> bool {
+        self.host == EditorHost::Overlay && self.game_hwnd.is_none()
     }
 
     fn checkpoint(&self) -> Checkpoint {
@@ -609,7 +619,7 @@ impl EditorState {
     pub fn start_region_screenshot(&mut self) {
         self.commit_transaction();
         let Some(game_hwnd) = self.game_hwnd else {
-            self.show_toast("Screenshots are only available in overlay mode");
+            self.show_toast("Screenshots need a game window (not available on Desktop)");
             return;
         };
 
@@ -1299,6 +1309,54 @@ pub fn Editor() -> Element {
         });
     });
 
+    // Desktop overlay: keep chrome on the monitor under the cursor.
+    let desktop = state.is_desktop_overlay();
+    if desktop {
+        use_hook(|| {
+            let scale = dioxus::desktop::window().scale_factor();
+            if let Some(bounds) = crate::platform::display::chrome_bounds_for_cursor(scale) {
+                state.chrome_bounds.set(Some(bounds));
+            }
+        });
+    }
+    use_future(move || async move {
+        if !desktop {
+            return;
+        }
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if *state.mode.peek() != ViewMode::Edit {
+                continue;
+            }
+            let scale = dioxus::desktop::window().scale_factor();
+            let Some(bounds) = crate::platform::display::chrome_bounds_for_cursor(scale) else {
+                continue;
+            };
+            let changed = state.chrome_bounds.peek().as_ref().is_none_or(|prev| {
+                (prev.left - bounds.left).abs() > 0.5
+                    || (prev.top - bounds.top).abs() > 0.5
+                    || (prev.width - bounds.width).abs() > 0.5
+                    || (prev.height - bounds.height).abs() > 0.5
+            });
+            if !changed {
+                continue;
+            }
+
+            // Fade out → snap to the new monitor → fade in.
+            state.chrome_fading.set(true);
+            tokio::time::sleep(std::time::Duration::from_millis(90)).await;
+            let scale = dioxus::desktop::window().scale_factor();
+            if let Some(latest) = crate::platform::display::chrome_bounds_for_cursor(scale) {
+                state.chrome_bounds.set(Some(latest));
+            } else {
+                state.chrome_bounds.set(Some(bounds));
+            }
+            // Let layout apply the new rect before fading back in.
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+            state.chrome_fading.set(false);
+        }
+    });
+
     let edit = state.is_edit_mode();
     let shot_active = *state.shot_mode.read();
     let opacity = match state.host {
@@ -1323,6 +1381,15 @@ pub fn Editor() -> Element {
     };
     let mode_class = if edit { "mode-edit" } else { "mode-overview" };
     let toast = state.toast.read().clone();
+    let chrome_bounds = *state.chrome_bounds.read();
+    let chrome_fading = *state.chrome_fading.read();
+    let chrome_style = match chrome_bounds {
+        Some(b) => format!(
+            "left: {}px; top: {}px; width: {}px; height: {}px;",
+            b.left, b.top, b.width, b.height
+        ),
+        None => String::new(),
+    };
 
     rsx! {
         div {
@@ -1333,19 +1400,30 @@ pub fn Editor() -> Element {
             },
             canvas::Canvas {}
             if edit && !shot_active {
-                chrome::Toolbar {}
-                chrome::Breadcrumbs {}
-                chrome::MainMenu {}
-                chrome::ObjectContextMenu {}
-                if state.host == EditorHost::Overlay {
-                    chrome::BottomBar {}
+                div {
+                    class: "chrome-stage",
+                    class: if chrome_bounds.is_some() { "pinned" },
+                    class: if chrome_fading { "fading" },
+                    style: "{chrome_style}",
+                    chrome::Toolbar {}
+                    chrome::Breadcrumbs {}
+                    chrome::MainMenu {}
+                    if state.host == EditorHost::Overlay {
+                        chrome::BottomBar {}
+                    }
+                    if let Some(msg) = toast.clone() {
+                        div { class: "editor-toast", "{msg}" }
+                    }
                 }
+                chrome::ObjectContextMenu {}
             }
             if shot_active {
                 chrome::ShotOverlay {}
             }
-            if let Some(msg) = toast {
-                div { class: "editor-toast", "{msg}" }
+            if !edit || shot_active {
+                if let Some(msg) = toast {
+                    div { class: "editor-toast", "{msg}" }
+                }
             }
         }
     }

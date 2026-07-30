@@ -697,23 +697,27 @@ pub fn BottomBar() -> Element {
         "Hide overview overlay"
     };
 
+    let can_screenshot = state.game_hwnd.is_some();
+
     rsx! {
         div { class: "bottombar",
-            button {
-                class: "bar-btn",
-                class: "has-tooltip",
-                aria_label: "Capture the game, then crop it ({screenshot_label})",
-                onclick: move |_| {
-                    state.start_region_screenshot();
-                },
-                svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
-                    stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
-                    path { d: "M4 8 H7 L9 5 H15 L17 8 H20 V19 H4 Z" }
-                    circle { cx: "12", cy: "13", r: "3.5" }
+            if can_screenshot {
+                button {
+                    class: "bar-btn",
+                    class: "has-tooltip",
+                    aria_label: "Capture the game, then crop it ({screenshot_label})",
+                    onclick: move |_| {
+                        state.start_region_screenshot();
+                    },
+                    svg { width: "18", height: "18", view_box: "0 0 24 24", fill: "none",
+                        stroke: "currentColor", stroke_width: "2", stroke_linejoin: "round",
+                        path { d: "M4 8 H7 L9 5 H15 L17 8 H20 V19 H4 Z" }
+                        circle { cx: "12", cy: "13", r: "3.5" }
+                    }
+                    "Screenshot"
                 }
-                "Screenshot"
+                div { class: "divider" }
             }
-            div { class: "divider" }
             button {
                 class: "bar-btn",
                 class: "has-tooltip",

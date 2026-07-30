@@ -216,6 +216,10 @@ input[type="range"] {
   border-color: rgba(122, 162, 255, 0.35);
 }
 
+.list-item.desktop-item .title {
+  color: #9ec0ff;
+}
+
 .list-item .title {
   font-weight: 600;
   font-size: 13.5px;
@@ -691,6 +695,31 @@ input[type="text"].subgraph-name-input {
 
 /* ---------- editor chrome ---------- */
 
+.chrome-stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 1;
+}
+
+.chrome-stage.pinned {
+  inset: auto;
+  transition: opacity 0.09s ease;
+}
+
+.chrome-stage.pinned.fading {
+  opacity: 0;
+}
+
+.chrome-stage > * {
+  pointer-events: auto;
+}
+
+.chrome-stage.fading > * {
+  pointer-events: none;
+}
+
 .toolbar {
   position: absolute;
   left: 14px;
@@ -817,7 +846,7 @@ input[type="range"]:focus-visible {
   position: absolute;
   top: 14px;
   left: 66px;
-  max-width: min(58vw, 680px);
+  max-width: min(58%, 680px);
   height: 42px;
   display: flex;
   align-items: center;

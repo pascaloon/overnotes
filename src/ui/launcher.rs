@@ -138,10 +138,16 @@ pub fn Launcher() -> Element {
         let Some((game_exe, doc_id)) = ensure_doc() else {
             return;
         };
-        let Some(rect) = tracker::client_rect_on_screen(game.hwnd) else {
-            status.set("Game window is gone - refresh the list".into());
-            processes.set(process::list_game_windows());
-            return;
+        let desktop = process::is_desktop(&game);
+        let rect = if desktop {
+            tracker::virtual_screen_rect()
+        } else {
+            let Some(rect) = tracker::client_rect_on_screen(game.hwnd) else {
+                status.set("Game window is gone - refresh the list".into());
+                processes.set(process::list_game_windows());
+                return;
+            };
+            rect
         };
         // Only one overlay at a time.
         close_overlay();
@@ -160,11 +166,18 @@ pub fn Launcher() -> Element {
                 overlay_ctx.set(Some(std::rc::Rc::downgrade(&ctx)));
                 attached_to.set(Some((game.title.clone(), game_exe, doc_id)));
                 let settings = store::load_settings();
-                status.set(format!(
-                    "Overlay attached - {} toggles overview/edit, {} captures to crop",
-                    settings.overlay_toggle_shortcut.label,
-                    settings.overlay_screenshot_shortcut.label
-                ));
+                status.set(if desktop {
+                    format!(
+                        "Desktop overlay - {} toggles overview/edit",
+                        settings.overlay_toggle_shortcut.label
+                    )
+                } else {
+                    format!(
+                        "Overlay attached - {} toggles overview/edit, {} captures to crop",
+                        settings.overlay_toggle_shortcut.label,
+                        settings.overlay_screenshot_shortcut.label
+                    )
+                });
             }
         });
     };
@@ -179,10 +192,12 @@ pub fn Launcher() -> Element {
     };
 
     let games = processes.read().clone();
-    let selected_hwnd = selected_game.read().as_ref().map(|g| g.hwnd);
+    let selected = selected_game.read().clone();
+    let selected_hwnd = selected.as_ref().map(|g| g.hwnd);
+    let selected_is_desktop = selected.as_ref().is_some_and(process::is_desktop);
     let doc_list = docs.read().clone();
     let selected_doc_id = selected_doc.read().clone();
-    let has_game = selected_hwnd.is_some();
+    let has_game = selected.is_some();
     let attached = attached_to.read().clone();
     let status_text = status.read().clone();
     let new_name = new_doc_name.read().clone();
@@ -203,7 +218,7 @@ pub fn Launcher() -> Element {
                 // -------- game processes --------
                 div { class: "launcher-col",
                     div { class: "col-head",
-                        span { "Running games" }
+                        span { "Targets" }
                         button {
                             class: "icon-btn",
                             class: "has-tooltip",
@@ -218,13 +233,15 @@ pub fn Launcher() -> Element {
                         }
                     }
                     div { class: "col-list",
-                        if games.is_empty() {
-                            div { class: "list-empty", "No windows found. Start a game, then refresh." }
-                        }
                         for game in games {
                             div {
                                 class: "list-item",
-                                class: if selected_hwnd == Some(game.hwnd) { "selected" },
+                                class: if selected_hwnd == Some(game.hwnd)
+                                    && selected_is_desktop == process::is_desktop(&game)
+                                {
+                                    "selected"
+                                },
+                                class: if process::is_desktop(&game) { "desktop-item" },
                                 onclick: {
                                     let game = game.clone();
                                     move |_| {
@@ -233,7 +250,11 @@ pub fn Launcher() -> Element {
                                     }
                                 },
                                 span { class: "title", "{game.title}" }
-                                span { class: "meta", "{game.exe} - pid {game.pid}" }
+                                if !process::is_desktop(&game) {
+                                    span { class: "meta", "{game.exe} - pid {game.pid}" }
+                                } else {
+                                    span { class: "meta", "All monitors - not tied to a process" }
+                                }
                             }
                         }
                     }

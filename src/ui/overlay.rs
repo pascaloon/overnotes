@@ -1,6 +1,6 @@
-//! The in-game overlay window.
+//! The overlay window (game-attached or desktop-wide).
 //!
-//! Hosts the shared editor over the game's client area. Two modes:
+//! Hosts the shared editor. Two modes:
 //! - Overview: click-through, no chrome, overview opacity. The global
 //!   edit-mode shortcut switches to edit mode.
 //! - Edit: fully interactive, editing opacity.
@@ -14,28 +14,35 @@ use dioxus::prelude::*;
 use global_hotkey::hotkey::HotKey;
 
 use crate::editor::{Editor, EditorHost, EditorState, ViewMode};
-use crate::platform::{overlay_style, tracker};
+use crate::platform::{overlay_style, process, tracker};
 use crate::store;
 
 #[component]
 pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Element {
+    let desktop = process::is_desktop_exe(&game_exe) || game_hwnd == 0;
     let state = use_context_provider(|| {
         let doc = store::load_document(&game_exe, &doc_id)
             .unwrap_or_else(|| store::Document::new(&game_exe, "Untitled"));
-        EditorState::create(EditorHost::Overlay, Some(game_hwnd), doc)
+        let hwnd = if desktop { None } else { Some(game_hwnd) };
+        EditorState::create(EditorHost::Overlay, hwnd, doc)
     });
 
-    // One-time window setup: extended styles + game tracker thread.
+    // One-time window setup: extended styles + tracker thread.
     let setup = use_hook(|| {
         let win = dioxus::desktop::window();
         let overlay_hwnd = win.window.hwnd();
         overlay_style::apply_overlay_base(overlay_hwnd);
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<tracker::GameEvent>();
-        let handle = tracker::start_tracking(game_hwnd, overlay_hwnd, tx);
-        Rc::new((handle, RefCell::new(Some(rx)), overlay_hwnd))
+        let handle = if desktop {
+            tracker::start_desktop_tracking(overlay_hwnd, tx)
+        } else {
+            tracker::start_tracking(game_hwnd, overlay_hwnd, tx)
+        };
+        Rc::new((handle, RefCell::new(Some(rx)), overlay_hwnd, desktop))
     });
     let overlay_hwnd = setup.2;
+    let is_desktop = setup.3;
 
     // Stop the tracker thread when the overlay goes away.
     {
@@ -82,8 +89,10 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
                 let _ = win.set_ignore_cursor_events(true);
                 overlay_style::apply_overlay_base(overlay_hwnd);
                 overlay_style::set_noactivate(overlay_hwnd, true);
-                // Hand focus back to the game.
-                overlay_style::focus_window(game_hwnd);
+                // Hand focus back to the game when there is one.
+                if !is_desktop {
+                    overlay_style::focus_window(game_hwnd);
+                }
             }
         }
     });
@@ -93,8 +102,10 @@ pub fn OverlayRoot(game_hwnd: isize, game_exe: String, doc_id: String) -> Elemen
         OverlayShortcut {
             action: OverlayShortcutAction::ToggleEditMode,
         }
-        OverlayShortcut {
-            action: OverlayShortcutAction::Screenshot,
+        if !is_desktop {
+            OverlayShortcut {
+                action: OverlayShortcutAction::Screenshot,
+            }
         }
         Editor {}
     }

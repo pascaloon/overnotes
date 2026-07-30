@@ -66,24 +66,37 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let doc_arg = arg_value_or_exit(&args, "--doc");
 
-    // `overnotes --overlay <window-title-substring | hwnd> [--doc <doc-id>]`
+    // `overnotes --overlay <window-title-substring | hwnd | desktop> [--doc <doc-id>]`
     if let Some(i) = args.iter().position(|a| a == "--overlay") {
         let title = args.get(i + 1).cloned().unwrap_or_default();
-        let game = if let Ok(raw) = title.parse::<isize>() {
-            platform::process::list_game_windows()
-                .into_iter()
-                .find(|g| g.hwnd == raw)
+        let (game, rect) = if title.eq_ignore_ascii_case("desktop")
+            || title.eq_ignore_ascii_case(platform::process::DESKTOP_EXE)
+        {
+            (
+                platform::process::desktop_window(),
+                platform::tracker::virtual_screen_rect(),
+            )
         } else {
-            platform::process::list_game_windows()
-                .into_iter()
-                .find(|g| g.title.to_lowercase().contains(&title.to_lowercase()))
+            let game = if let Ok(raw) = title.parse::<isize>() {
+                platform::process::list_game_windows()
+                    .into_iter()
+                    .find(|g| g.hwnd == raw && !platform::process::is_desktop(g))
+            } else {
+                platform::process::list_game_windows()
+                    .into_iter()
+                    .find(|g| {
+                        !platform::process::is_desktop(g)
+                            && g.title.to_lowercase().contains(&title.to_lowercase())
+                    })
+            };
+            let Some(game) = game else {
+                eprintln!("No window matching {title:?} found");
+                std::process::exit(1);
+            };
+            let rect = platform::tracker::client_rect_on_screen(game.hwnd)
+                .unwrap_or((100, 100, 1024, 640));
+            (game, rect)
         };
-        let Some(game) = game else {
-            eprintln!("No window matching {title:?} found");
-            std::process::exit(1);
-        };
-        let rect =
-            platform::tracker::client_rect_on_screen(game.hwnd).unwrap_or((100, 100, 1024, 640));
         let doc_id = direct_doc_for(&game.exe, doc_arg);
         let dom = VirtualDom::new_with_props(
             ui::overlay::OverlayRoot,

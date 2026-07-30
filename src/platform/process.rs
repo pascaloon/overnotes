@@ -1,4 +1,7 @@
 //! Enumerate visible top-level windows that can be attached to.
+//!
+//! Also exposes a synthetic "Desktop" target that is always available and is
+//! not tied to any process window.
 
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
@@ -12,6 +15,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
 };
 
+/// Sentinel exe used for desktop-wide notes (storage key + list identity).
+pub const DESKTOP_EXE: &str = "desktop.exe";
+pub const DESKTOP_TITLE: &str = "Desktop";
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct GameWindow {
     pub hwnd: isize,
@@ -19,6 +26,23 @@ pub struct GameWindow {
     pub pid: u32,
     /// Executable file name, e.g. `dummy_game.exe`.
     pub exe: String,
+}
+
+pub fn desktop_window() -> GameWindow {
+    GameWindow {
+        hwnd: 0,
+        title: DESKTOP_TITLE.into(),
+        pid: 0,
+        exe: DESKTOP_EXE.into(),
+    }
+}
+
+pub fn is_desktop(win: &GameWindow) -> bool {
+    is_desktop_exe(&win.exe) || win.hwnd == 0
+}
+
+pub fn is_desktop_exe(exe: &str) -> bool {
+    exe.eq_ignore_ascii_case(DESKTOP_EXE)
 }
 
 pub fn list_game_windows() -> Vec<GameWindow> {
@@ -30,7 +54,10 @@ pub fn list_game_windows() -> Vec<GameWindow> {
         );
     }
     windows_list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-    windows_list
+    let mut out = Vec::with_capacity(windows_list.len() + 1);
+    out.push(desktop_window());
+    out.extend(windows_list);
+    out
 }
 
 unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
