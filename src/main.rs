@@ -58,7 +58,9 @@ fn direct_doc_for(game_exe: &str, doc_ref: Option<&str>) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     };
-    eprintln!("No document id or name {doc_ref:?} found for game {game_exe:?}. Available: {available}");
+    eprintln!(
+        "No document id or name {doc_ref:?} found for game {game_exe:?}. Available: {available}"
+    );
     std::process::exit(1);
 }
 
@@ -115,10 +117,7 @@ fn main() {
         let doc_id = direct_doc_for(&game_exe, doc_arg);
         let dom = VirtualDom::new_with_props(
             ui::standalone::StandaloneRoot,
-            ui::standalone::StandaloneRootProps {
-                game_exe,
-                doc_id,
-            },
+            ui::standalone::StandaloneRootProps { game_exe, doc_id },
         );
         dioxus::desktop::launch::launch_virtual_dom(dom, ui::standalone_config("Untitled"));
     }

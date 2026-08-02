@@ -1,7 +1,7 @@
 //! One-shot screenshot of a game window region via the Windows Graphics
 //! Capture API (`windows-capture` crate).
 
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{SyncSender, sync_channel};
 use std::time::Duration;
 
 use windows::Win32::Foundation::{HWND, POINT, RECT};

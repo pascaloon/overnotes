@@ -166,14 +166,103 @@ fn default_note_font_size() -> f64 {
     DEFAULT_NOTE_FONT_SIZE
 }
 
+/// Structural accessors shared by every object kind.
+///
+/// Traversal, persistence and history all go through these instead of
+/// matching on variants, so a new kind only has to fill in these arms.
+impl ObjectKind {
+    /// Objects nested inside this one. Empty for everything but containers.
+    pub fn children(&self) -> &[CanvasObject] {
+        match self {
+            ObjectKind::Subgraph { objects, .. } => objects,
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => &[],
+        }
+    }
+
+    /// `Some` only for kinds that can hold a graph of their own.
+    pub fn children_mut(&mut self) -> Option<&mut Vec<CanvasObject>> {
+        match self {
+            ObjectKind::Subgraph { objects, .. } => Some(objects),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => None,
+        }
+    }
+
+    /// Display name of a container, used for breadcrumbs and drop targets.
+    pub fn container_label(&self) -> Option<&str> {
+        match self {
+            ObjectKind::Subgraph { name, .. } => Some(name),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => None,
+        }
+    }
+
+    pub fn is_container(&self) -> bool {
+        self.container_label().is_some()
+    }
+
+    /// A container's own saved camera.
+    pub fn view(&self) -> Option<GraphView> {
+        match self {
+            ObjectKind::Subgraph { view, .. } => Some(*view),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => None,
+        }
+    }
+
+    pub fn view_mut(&mut self) -> Option<&mut GraphView> {
+        match self {
+            ObjectKind::Subgraph { view, .. } => Some(view),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => None,
+        }
+    }
+
+    /// PNG filename this object owns inside the document folder.
+    pub fn image_file(&self) -> Option<&str> {
+        match self {
+            ObjectKind::Image { file } => Some(file),
+            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } | ObjectKind::Subgraph { .. } => {
+                None
+            }
+        }
+    }
+
+    /// The recolorable color of the object, if it has one.
+    pub fn color(&self) -> Option<&str> {
+        match self {
+            ObjectKind::Note { color, .. } | ObjectKind::Subgraph { color, .. } => Some(color),
+            ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => None,
+        }
+    }
+
+    pub fn set_color(&mut self, value: &str) {
+        match self {
+            ObjectKind::Note { color, .. } | ObjectKind::Subgraph { color, .. } => {
+                *color = value.to_string();
+            }
+            ObjectKind::Drawing { .. } | ObjectKind::Image { .. } => {}
+        }
+    }
+
+    /// Heap owned directly by this kind, excluding nested objects.
+    pub fn heap_bytes(&self) -> usize {
+        match self {
+            ObjectKind::Note { text, color, .. } => text.capacity() + color.capacity(),
+            ObjectKind::Drawing { points, stroke, .. } => {
+                points.capacity() * std::mem::size_of::<[f64; 2]>() + stroke.capacity()
+            }
+            ObjectKind::Image { file } => file.capacity(),
+            ObjectKind::Subgraph { name, color, .. } => name.capacity() + color.capacity(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct DocMeta {
     pub id: String,
     pub name: String,
 }
 
+/// A graph an object can be moved into, from the context menu.
 #[derive(Clone, PartialEq, Debug)]
-pub struct SubgraphDestination {
+pub struct GraphDestination {
     pub path: Vec<u64>,
     pub label: String,
 }
@@ -202,10 +291,10 @@ impl Document {
         let mut objects = self.objects.as_slice();
         for id in path {
             let obj = objects.iter().find(|o| o.id == *id)?;
-            let ObjectKind::Subgraph { objects: child, .. } = &obj.kind else {
+            if !obj.kind.is_container() {
                 return None;
-            };
-            objects = child.as_slice();
+            }
+            objects = obj.kind.children();
         }
         Some(objects)
     }
@@ -214,50 +303,27 @@ impl Document {
         let mut objects = &mut self.objects;
         for id in path {
             let pos = objects.iter().position(|o| o.id == *id)?;
-            let ObjectKind::Subgraph { objects: child, .. } = &mut objects[pos].kind else {
-                return None;
-            };
-            objects = child;
+            objects = objects[pos].kind.children_mut()?;
         }
         Some(objects)
     }
 
     pub fn view_at_path(&self, path: &[u64]) -> Option<GraphView> {
-        if path.is_empty() {
+        let Some((last, parents)) = path.split_last() else {
             return Some(self.root_view);
-        }
-        let mut objects = self.objects.as_slice();
-        for (i, id) in path.iter().enumerate() {
-            let obj = objects.iter().find(|o| o.id == *id)?;
-            let ObjectKind::Subgraph {
-                view,
-                objects: child,
-                ..
-            } = &obj.kind
-            else {
-                return None;
-            };
-            if i + 1 == path.len() {
-                return Some(*view);
-            }
-            objects = child.as_slice();
-        }
-        None
+        };
+        self.object_at_path(parents, *last)?.kind.view()
     }
 
     pub fn set_view_at_path(&mut self, path: &[u64], view: GraphView) -> bool {
-        if path.is_empty() {
+        let Some((last, parents)) = path.split_last() else {
             self.root_view = view;
             return true;
-        }
-        let Some(id) = path.last().copied() else {
-            return false;
         };
-        let parent_path = &path[..path.len().saturating_sub(1)];
-        let Some(obj) = self.object_at_path_mut(parent_path, id) else {
-            return false;
-        };
-        let ObjectKind::Subgraph { view: target, .. } = &mut obj.kind else {
+        let Some(target) = self
+            .object_at_path_mut(parents, *last)
+            .and_then(|obj| obj.kind.view_mut())
+        else {
             return false;
         };
         *target = view;
@@ -338,7 +404,8 @@ impl Document {
         true
     }
 
-    pub fn move_objects_into_subgraph(
+    /// Move `ids` from `path` into the container `target_id` in the same graph.
+    pub fn move_objects_into_container(
         &mut self,
         path: &[u64],
         ids: &[u64],
@@ -350,10 +417,10 @@ impl Document {
         let Some(objects) = self.objects_at_path_mut(path) else {
             return false;
         };
-        if !matches!(
-            objects.iter().find(|o| o.id == target_id).map(|o| &o.kind),
-            Some(ObjectKind::Subgraph { .. })
-        ) {
+        if !objects
+            .iter()
+            .any(|o| o.id == target_id && o.kind.is_container())
+        {
             return false;
         }
         let mut moved = Vec::new();
@@ -368,11 +435,11 @@ impl Document {
         if moved.is_empty() {
             return false;
         }
-        let Some(target) = objects.iter_mut().find(|o| o.id == target_id) else {
-            objects.extend(moved);
-            return false;
-        };
-        let ObjectKind::Subgraph { objects: child, .. } = &mut target.kind else {
+        let Some(child) = objects
+            .iter_mut()
+            .find(|o| o.id == target_id)
+            .and_then(|target| target.kind.children_mut())
+        else {
             objects.extend(moved);
             return false;
         };
@@ -410,16 +477,11 @@ impl Document {
             let Some(obj) = objects.iter().find(|o| o.id == *id) else {
                 break;
             };
-            let ObjectKind::Subgraph {
-                name,
-                objects: child,
-                ..
-            } = &obj.kind
-            else {
+            let Some(name) = obj.kind.container_label() else {
                 break;
             };
-            names.push(name.clone());
-            objects = child.as_slice();
+            names.push(name.to_string());
+            objects = obj.kind.children();
         }
         names
     }
@@ -430,19 +492,16 @@ impl Document {
         out
     }
 
-    pub fn subgraph_destinations(
-        &self,
-        moving_id: u64,
-        source_path: &[u64],
-    ) -> Vec<SubgraphDestination> {
+    /// Every container the object could be moved into, plus the root.
+    pub fn graph_destinations(&self, moving_id: u64, source_path: &[u64]) -> Vec<GraphDestination> {
         let mut out = Vec::new();
         if !source_path.is_empty() {
-            out.push(SubgraphDestination {
+            out.push(GraphDestination {
                 path: Vec::new(),
                 label: "Root".to_string(),
             });
         }
-        collect_subgraph_destinations(
+        collect_graph_destinations(
             &self.objects,
             &mut Vec::new(),
             &mut Vec::new(),
@@ -464,55 +523,54 @@ impl CanvasObject {
 
 fn collect_image_objects(objects: &[CanvasObject], out: &mut Vec<(u64, String)>) {
     for obj in objects {
-        match &obj.kind {
-            ObjectKind::Image { file } => out.push((obj.id, file.clone())),
-            ObjectKind::Subgraph { objects, .. } => collect_image_objects(objects, out),
-            ObjectKind::Note { .. } | ObjectKind::Drawing { .. } => {}
+        if let Some(file) = obj.kind.image_file() {
+            out.push((obj.id, file.to_string()));
         }
+        collect_image_objects(obj.kind.children(), out);
     }
 }
 
 fn collect_image_ids_in_object(obj: &CanvasObject, out: &mut Vec<u64>) {
-    match &obj.kind {
-        ObjectKind::Image { .. } => out.push(obj.id),
-        ObjectKind::Subgraph { objects, .. } => {
-            for child in objects {
-                collect_image_ids_in_object(child, out);
-            }
-        }
-        ObjectKind::Note { .. } | ObjectKind::Drawing { .. } => {}
+    if obj.kind.image_file().is_some() {
+        out.push(obj.id);
+    }
+    for child in obj.kind.children() {
+        collect_image_ids_in_object(child, out);
     }
 }
 
-fn collect_subgraph_destinations(
+fn collect_graph_destinations(
     objects: &[CanvasObject],
     path: &mut Vec<u64>,
     names: &mut Vec<String>,
     moving_id: u64,
     source_path: &[u64],
-    out: &mut Vec<SubgraphDestination>,
+    out: &mut Vec<GraphDestination>,
 ) {
     for obj in objects {
-        if let ObjectKind::Subgraph {
-            name,
-            objects: child,
-            ..
-        } = &obj.kind
-        {
-            path.push(obj.id);
-            names.push(name.clone());
+        let Some(name) = obj.kind.container_label() else {
+            continue;
+        };
+        path.push(obj.id);
+        names.push(name.to_string());
 
-            if obj.id != moving_id && !path.contains(&moving_id) && path.as_slice() != source_path {
-                out.push(SubgraphDestination {
-                    path: path.clone(),
-                    label: names.join(" / "),
-                });
-            }
-
-            collect_subgraph_destinations(child, path, names, moving_id, source_path, out);
-            names.pop();
-            path.pop();
+        if obj.id != moving_id && !path.contains(&moving_id) && path.as_slice() != source_path {
+            out.push(GraphDestination {
+                path: path.clone(),
+                label: names.join(" / "),
+            });
         }
+
+        collect_graph_destinations(
+            obj.kind.children(),
+            path,
+            names,
+            moving_id,
+            source_path,
+            out,
+        );
+        names.pop();
+        path.pop();
     }
 }
 

@@ -1,0 +1,24 @@
+/* ============ canvas element: drawing ============ */
+
+.viewport.tool-draw {
+  cursor: crosshair;
+}
+
+.drawing-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* The stroke being drawn right now, anchored at the world origin. */
+.live-stroke {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}

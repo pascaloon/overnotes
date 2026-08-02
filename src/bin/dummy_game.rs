@@ -77,8 +77,7 @@ impl App {
             return;
         };
         let size = window.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-        else {
+        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
         };
         if surface.resize(w, h).is_err() {
@@ -151,7 +150,16 @@ impl App {
         // Key-press border flash.
         if t < key_flash_until {
             let thickness = 8;
-            fill_rect(&mut buffer, width, height, 0, 0, width as i64, thickness, 0x0050ff96);
+            fill_rect(
+                &mut buffer,
+                width,
+                height,
+                0,
+                0,
+                width as i64,
+                thickness,
+                0x0050ff96,
+            );
             fill_rect(
                 &mut buffer,
                 width,
@@ -162,7 +170,16 @@ impl App {
                 thickness,
                 0x0050ff96,
             );
-            fill_rect(&mut buffer, width, height, 0, 0, thickness, height as i64, 0x0050ff96);
+            fill_rect(
+                &mut buffer,
+                width,
+                height,
+                0,
+                0,
+                thickness,
+                height as i64,
+                0x0050ff96,
+            );
             fill_rect(
                 &mut buffer,
                 width,

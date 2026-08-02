@@ -41,6 +41,31 @@ images stored alongside as PNG files.
 Canvas and document edits support up to 100 undo steps. Use `Ctrl+Z` to undo and
 `Ctrl+Y` or `Ctrl+Shift+Z` to redo.
 
+## Adding a canvas element
+
+Notes, subgraphs, drawings and images are all *canvas elements*: each one owns
+its rendering, its toolbar entry and its stylesheet in a single file under
+`src/editor/objects/`. Adding a new one touches four places.
+
+1. **The model.** Add a variant to `ObjectKind` in `src/store/mod.rs`. The serde
+   tag name is the on-disk format, so pick it carefully. The compiler will then
+   point at the handful of accessors (`children`, `container_label`,
+   `image_file`, `color`, `heap_bytes`, ...) that every kind must answer;
+   traversal, persistence and undo all go through those, so nothing else in
+   `store` or `history` needs to change.
+2. **The element.** Add `src/editor/objects/<name>.rs` with a unit struct that
+   implements `CanvasElement`. Only `matches` and `body` are required. Override
+   `toolbar`, `on_activate`, `locks_aspect_ratio`, `tool`, `action` and `style`
+   as needed; the shared wrapper in `objects/mod.rs` already handles placement,
+   rotation, opacity, selection, dragging and the context menu.
+3. **The registry.** Add the module to `objects/mod.rs` and one entry to
+   `ELEMENTS` in `objects/registry.rs`. That entry is what gives the element its
+   toolbar button, its cursor, its options panel and its stylesheet - the
+   toolbar and the `Editor` component read the list, they do not hardcode it.
+4. **The styles.** Optionally add `assets/objects/<name>.css` and return it from
+   `style()`. Anything shared with other elements belongs in `assets/style.css`
+   instead.
+
 ## Overlay technique
 
 Same family as the revamped Discord overlay / Xbox Game Bar: a separate

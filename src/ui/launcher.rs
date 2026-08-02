@@ -89,7 +89,11 @@ pub fn Launcher() -> Element {
         }
         let name = {
             let n = new_doc_name.peek().trim().to_string();
-            if n.is_empty() { "Untitled".to_string() } else { n }
+            if n.is_empty() {
+                "Untitled".to_string()
+            } else {
+                n
+            }
         };
         let doc = store::Document::new(&game.exe, &name);
         if let Err(e) = store::save_document(&doc) {

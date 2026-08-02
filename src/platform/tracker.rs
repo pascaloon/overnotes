@@ -13,21 +13,21 @@
 //! A low-frequency `WM_TIMER` acts as a safety net for missed events (and
 //! picks up display-layout changes for Desktop).
 
-use std::sync::mpsc::channel;
 use std::sync::Mutex;
+use std::sync::mpsc::channel;
 
 use tokio::sync::mpsc::UnboundedSender;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Threading::GetCurrentThreadId;
-use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetClientRect, GetForegroundWindow, GetMessageW, GetSystemMetrics,
-    GetWindowThreadProcessId, IsIconic, IsWindow, KillTimer, PostThreadMessageW, SetTimer,
-    SetWindowPos, TranslateMessage, EVENT_OBJECT_DESTROY, EVENT_OBJECT_LOCATIONCHANGE,
-    EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND, HWND_TOPMOST, MSG, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_HIDEWINDOW, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, WINEVENT_OUTOFCONTEXT, WM_QUIT, WM_TIMER,
+    DispatchMessageW, EVENT_OBJECT_DESTROY, EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_FOREGROUND,
+    EVENT_SYSTEM_MINIMIZEEND, GetClientRect, GetForegroundWindow, GetMessageW, GetSystemMetrics,
+    GetWindowThreadProcessId, HWND_TOPMOST, IsIconic, IsWindow, KillTimer, MSG, PostThreadMessageW,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_HIDEWINDOW,
+    SWP_NOACTIVATE, SWP_SHOWWINDOW, SetTimer, SetWindowPos, TranslateMessage,
+    WINEVENT_OUTOFCONTEXT, WM_QUIT, WM_TIMER,
 };
 
 const OBJID_WINDOW: i32 = 0;
@@ -262,8 +262,7 @@ fn update_overlay() {
                 }
 
                 let fg = GetForegroundWindow().0 as isize;
-                let visible =
-                    !IsIconic(game).as_bool() && (fg == game_raw || fg == state.overlay);
+                let visible = !IsIconic(game).as_bool() && (fg == game_raw || fg == state.overlay);
 
                 let mut client = RECT::default();
                 if GetClientRect(game, &mut client).is_err() {

@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use crate::store::{CanvasObject, Document, ObjectKind};
+use crate::store::{CanvasObject, Document};
 
 pub const HISTORY_CAPACITY: usize = 100;
 /// Approximate memory retained by undo/redo snapshots, including an active baseline.
@@ -206,18 +206,8 @@ fn estimated_objects_bytes(objects: &[CanvasObject]) -> usize {
     std::mem::size_of_val(objects)
         + objects
             .iter()
-            .map(|object| match &object.kind {
-                ObjectKind::Note { text, color, .. } => text.capacity() + color.capacity(),
-                ObjectKind::Drawing { points, stroke, .. } => {
-                    points.capacity() * std::mem::size_of::<[f64; 2]>() + stroke.capacity()
-                }
-                ObjectKind::Image { file } => file.capacity(),
-                ObjectKind::Subgraph {
-                    name,
-                    color,
-                    objects,
-                    ..
-                } => name.capacity() + color.capacity() + estimated_objects_bytes(objects),
+            .map(|object| {
+                object.kind.heap_bytes() + estimated_objects_bytes(object.kind.children())
             })
             .sum::<usize>()
 }
